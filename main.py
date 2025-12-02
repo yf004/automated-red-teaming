@@ -61,7 +61,7 @@ async def main():
     async def planner(state: PentestState):
         """Planner agent returns raw natural language output."""
         planner_agent = create_react_agent(
-            model=ChatOllama(model=MODEL, temperature=0),
+            model=ChatOllama(model=MODEL, temperature=0, verbose=False),
             prompt=planner_agent_prompt,
             name="planner_agent",
             tools=await planner_tools(),
@@ -106,7 +106,7 @@ async def main():
     async def attacker(state: PentestState):
         """Attacker agent returns raw natural language output (no structured output)."""
         attacker_agent = create_react_agent(
-            model=ChatOllama(model=MODEL, temperature=0),
+            model=ChatOllama(model=MODEL, temperature=0, verbose=False),
             prompt=attacker_agent_prompt,
             name="attacker_agent",
             tools=attacker_tools(),
@@ -149,7 +149,7 @@ async def main():
     async def critic(state: PentestState):
         """Critic agent returns raw natural language output."""
         critic_agent = create_react_agent(
-            model=ChatOllama(model=MODEL, temperature=0),
+            model=ChatOllama(model=MODEL, temperature=0, verbose=False),
             prompt=critic_agent_prompt,
             name="critic_agent",
             tools=await planner_tools(),

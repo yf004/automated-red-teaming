@@ -42,6 +42,136 @@ class PlannerOutput(TypedDict):
 
 class CriticOutput(TypedDict):
     final_output: dict[str, Union[list[dict], dict]]
+
+
+def print_planner_output(data: dict) -> None:
+    """
+    Pretty print Planner Agent output.
+    """
+    print("\n" + "="*80)
+    print("PLANNER AGENT OUTPUT")
+    print("="*80)
+    
+    final_output = data.get("final_output", [])
+    
+    for idx, entry in enumerate(final_output, 1):
+        print(f"\n[Entry Point #{idx}]")
+        print(f"  Entry Point: {entry.get('entry_point', 'N/A')}")
+        print(f"  Page URL: {entry.get('page_url', 'N/A')}")
+        print(f"  Justification: {entry.get('justification', 'N/A')}")
+        
+        payload_sequence = entry.get('payload_sequence', [])
+        print(f"\n  Payload Sequence ({len(payload_sequence)} payload(s)):")
+        
+        for pidx, payload in enumerate(payload_sequence, 1):
+            print(f"\n    [Payload #{pidx}]")
+            print(f"      Type: {payload.get('type', 'N/A')}")
+            print(f"      Reason: {payload.get('reason', 'N/A')}")
+            print(f"      Payloads:")
+            
+            payloads_dict = payload.get('payloads', {})
+            for field_name, field_payload in payloads_dict.items():
+                print(f"        - {field_name}: {field_payload}")
+        
+        print("\n" + "-"*80)
+    
+    print()
+
+
+def print_critic_output(data: dict) -> None:
+    """
+    Pretty print Critic Agent output.
+    """
+    print("\n" + "="*80)
+    print("CRITIC AGENT OUTPUT")
+    print("="*80)
+    
+    final_output = data.get("final_output", {})
+    
+    print("\n[ANALYSIS]")
+    analysis_list = final_output.get("analysis", [])
+    
+    for idx, analysis in enumerate(analysis_list, 1):
+        print(f"\n  Analysis #{idx}:")
+        print(f"    Entry Point: {analysis.get('entry_point', 'N/A')}")
+        print(f"    Page URL: {analysis.get('page_url', 'N/A')}")
+        print(f"    Reflection: {analysis.get('reflection', 'None')}")
+        print(f"    Analysis: {analysis.get('analysis', 'N/A')}")
+        
+        print(f"    Payloads Tested:")
+        payloads = analysis.get('payloads', {})
+        for field_name, payload in payloads.items():
+            print(f"      - {field_name}: {payload}")
+        print()
+    
+    print("\n[RECOMMENDATION]")
+    recommendation = final_output.get("recommendation", {})
+    print(f"  Reason: {recommendation.get('reason', 'N/A')}")
+    print(f"  Recommended Payloads:")
+    
+    rec_payloads = recommendation.get('payloads', {})
+    for field_name, payload in rec_payloads.items():
+        print(f"    - {field_name}: {payload}")
+    
+    print("\n" + "="*80 + "\n")
+
+
+def print_attacker_output(data: dict) -> None:
+    """
+    Pretty print Attacker Agent output.
+    """
+    print("\n" + "="*80)
+    print("ATTACKER AGENT OUTPUT")
+    print("="*80)
+    
+    final_output = data.get("final_output", [])
+    
+    for idx, attempt in enumerate(final_output, 1):
+        print(f"\n[Attempt #{idx}]")
+        print(f"  Entry Point: {attempt.get('entry_point', 'N/A')}")
+        print(f"  Page URL: {attempt.get('page_url', 'N/A')}")
+        
+        print(f"  Payloads:")
+        payloads = attempt.get('payloads', {})
+        for field_name, payload in payloads.items():
+            print(f"    - {field_name}: {payload}")
+        
+        print(f"\n  Response Excerpt:")
+        response = attempt.get('response_excerpt', 'N/A')
+        if len(response) > 200:
+            response = response[:200] + "..."
+        print(f"    {response}")
+        
+        print(f"\n  Notes: {attempt.get('notes', 'N/A')}")
+        print("\n" + "-"*80)
+    
+    print()
+
+
+def print_evaluator_output(data: dict) -> None:
+    """
+    Pretty print Exploit Evaluator output.
+    """
+    print("\n" + "="*80)
+    print("EXPLOIT EVALUATOR OUTPUT")
+    print("="*80)
+    
+    should_terminate = data.get('should_terminate', False)
+    reason = data.get('reason', 'N/A')
+    successful_payload = data.get('successful_payload')
+    
+    print(f"\n  Should Terminate: {should_terminate}")
+    print(f"  Reason: {reason}")
+    
+    if successful_payload:
+        print(f"\n  Successful Payload:")
+        for field_name, payload in successful_payload.items():
+            print(f"    - {field_name}: {payload}")
+    else:
+        print(f"\n  Successful Payload: None")
+    
+    print("\n" + "="*80 + "\n")
+
     
 def get_json_schema_prompt(schema_class: type) -> str:
     """
@@ -159,10 +289,21 @@ def safe_parse_json(content: str) -> dict:
             return json.loads(content[start:end])
         raise
 
-async def call_ollama_with_json(model_name: str, prompt: str, schema_class: type, max_retries: int = 3) -> dict:
+
+async def call_ollama_with_json(model_name: str, prompt: str, schema_class: type, max_retries: int = 3, print_output: bool = True) -> dict:
     """
     Call Ollama with JSON mode enabled and parse the response.
     Includes retry logic for malformed JSON and server errors.
+    
+    Args:
+        model_name: Name of the Ollama model to use
+        prompt: The prompt to send to the model
+        schema_class: TypedDict class defining the expected output schema
+        max_retries: Maximum number of retry attempts
+        print_output: Whether to pretty print the output (default: True)
+    
+    Returns:
+        Parsed JSON dictionary matching the schema
     """
     schema_name = schema_class.__name__
     
@@ -193,6 +334,7 @@ Your response should start with {{ and end with }}"""
             
             response = await llm.ainvoke([HumanMessage(content=enhanced_prompt)])
             result = safe_parse_json(response.content)
+            
             if schema_name == "CriticOutput":
                 if "final_output" in result:
                     if "analysis" not in result["final_output"] or "recommendation" not in result["final_output"]:
@@ -202,11 +344,21 @@ Your response should start with {{ and end with }}"""
                 else:
                     raise ValueError(f"Invalid CriticOutput structure. Missing required fields.")
             
+            if print_output:
+                if schema_name == "PlannerOutput":
+                    print_planner_output(result)
+                elif schema_name == "CriticOutput":
+                    print_critic_output(result)
+                elif schema_name == "AttackerOutput":
+                    print_attacker_output(result)
+                elif schema_name == "ExploitEvaluatorOutput":
+                    print_evaluator_output(result)
+            
             return result
             
         except Exception as e:
-            print('Error: ', e)
-            raise
+            print(f'Error on attempt {attempt + 1}/{max_retries}: {e}')
+            if attempt == max_retries - 1:
+                raise
     
     raise ValueError(f"Failed to get valid JSON after {max_retries} attempts")
-
