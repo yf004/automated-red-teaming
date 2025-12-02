@@ -265,6 +265,7 @@ JSON array `attempts`:
     - **Aggregate & Recommend**
         - Summarize common patterns across all attempts and infer any database‐specific behaviors or filters.
         - Provide one **improved payload** (or, if the form has multiple fields, a `payloads` mapping of field names to payload strings) that addresses the diagnosed issues.
+        - Do not suggest any other types of injection/methods, other than NOSQL injection. Only suggest NoSQL injection payloads.ss
 2. Generate a structured JSON output
 After your reasoning, output **only** the following JSON object (no extra text):
     
