@@ -2,10 +2,12 @@ from typing import TypedDict, Union
 from pydantic import Field
 from typing import TypedDict, Union
 import json
-import getpass
-import os
 import warnings
 import nest_asyncio
+from langchain_ollama.chat_models import ChatOllama
+from langchain_core.messages import HumanMessage, AIMessage
+
+
 
 nest_asyncio.apply()
 warnings.filterwarnings("ignore", category=ResourceWarning)
@@ -171,6 +173,7 @@ async def call_ollama_with_json(model_name: str, prompt: str, schema_class: type
                 format="json",
                 temperature=0.1,
                 timeout=120,
+                verbose=False
             )
             schema_desc = get_json_schema_prompt(schema_class)
             enhanced_prompt = f"""{prompt}
