@@ -27,6 +27,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import create_react_agent
 from langgraph_supervisor import create_supervisor
 from pydantic import Field
+from langchain_core.messages import HumanMessage, AIMessage
 
 from tools.all_tools import (
     PentestState,
