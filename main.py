@@ -1,28 +1,9 @@
 import sys
 from typing import TypedDict, Union, Optional, Any, List
 import json
-
-if len(sys.argv) < 3:
-    print("Usage: python main.py <url> <model>")
-    sys.exit(1)
-
 import asyncio
-import getpass
-import os
 import warnings
-
 import nest_asyncio
-from langchain.chat_models import init_chat_model
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.outputs import ChatGeneration, ChatResult
-from langchain_core.callbacks.manager import CallbackManagerForLLMRun
-from langgraph.checkpoint.sqlite import SqliteSaver
-from langgraph.graph import END, START, StateGraph
-from langgraph.prebuilt import create_react_agent
-from langgraph_supervisor import create_supervisor
-from pydantic import Field
 
 from langchain_ollama.chat_models import ChatOllama
 from agents.prompts import (
@@ -34,7 +15,13 @@ from agents.prompts import (
     report_writer_agent_prompt, 
     supervisor_agent_prompt
 )
-from agents.outputs import ExploitEvaluatorOutput, AttackerOutput, PlannerOutput, CriticOutput
+from agents.outputs import(
+    ExploitEvaluatorOutput, 
+    AttackerOutput, 
+    PlannerOutput, 
+    CriticOutput,
+    call_ollama_with_json
+)
 from langchain_core.exceptions import OutputParserException
 
 
@@ -50,178 +37,9 @@ from tools.all_tools import (
 nest_asyncio.apply()
 warnings.filterwarnings("ignore", category=ResourceWarning)
 
-def _set_if_undefined(var: str):
-    if not os.environ.get(var):
-        os.environ[var] = getpass.getpass(f"Please provide your {var}")
-
-
-def get_json_schema_prompt(schema_class: type) -> str:
-    """
-    Generate a JSON schema prompt from a Pydantic TypedDict class.
-    """
-    if schema_class.__name__ == "CriticOutput":
-        return """
-{
-  "final_output": {
-    "analysis": [
-      {
-        "entry_point": "string (URL)",
-        "page_url": "string (URL of the page with the form)",
-        "payloads": {
-          "field_name_1": "payload string",
-          "field_name_2": "payload string"
-        },
-        "reflection": "string or null (full NoSQL command)",
-        "analysis": "string (explanation)"
-      }
-    ],
-    "recommendation": {
-      "payloads": {
-        "field1": "payload string",
-        "field2": "payload string"
-      },
-      "reason": "string (why this payload should succeed)"
-    }
-  }
-}
-"""
-    elif schema_class.__name__ == "PlannerOutput":
-        return """
-{
-  "final_output": [
-    {
-      "entry_point": "string (URL)",
-      "page_url": "string (URL of the page with the form)",
-      "payload_sequence": [
-        {
-          "type": "string (e.g., boolean, union)",
-          "payloads": {
-            "field_name_1": "payload string",
-            "field_name_2": "payload string"
-          },
-          "reason": "string (rationale)"
-        }
-      ],
-      "justification": "string (brief summary)"
-    }
-  ]
-}
-"""
-    elif schema_class.__name__ == "AttackerOutput":
-        return """
-{
-  "final_output": [
-    {
-      "entry_point": "string (URL)",
-      "page_url": "string (URL of the page with the form)",
-      "payloads": {
-        "field_name": "payload string"
-      },
-      "response_excerpt": "string (excerpt of response)",
-      "notes": "string (observations)"
-    }
-  ]
-}
-"""
-    elif schema_class.__name__ == "ExploitEvaluatorOutput":
-        return """
-{
-  "should_terminate": boolean,
-  "reason": "string (reason for verdict)",
-  "successful_payload": null or {
-    "field_name_1": "payload string",
-    "field_name_2": "payload string"
-  }
-}
-"""
-    
-    hints = schema_class.__annotations__
-    schema_desc = "{\n"
-    for field_name, field_type in hints.items():
-        field_info = schema_class.__dict__.get(field_name)
-        desc = field_info.description if hasattr(field_info, 'description') else ""
-        type_str = str(field_type).replace("typing.", "")
-        schema_desc += f'  "{field_name}": {type_str}'
-        if desc:
-            schema_desc += f'  // {desc}'
-        schema_desc += '\n'
-    schema_desc += "}"
-    
-    return schema_desc
-
-
-def safe_parse_json(content: str) -> dict:
-    """
-    Safely parse JSON from model output, handling markdown code blocks.
-    """
-    content = content.strip()
-    if content.startswith("```"):
-        lines = content.split("\n")
-        lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        content = "\n".join(lines).strip()
-    
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        start = content.find('{')
-        end = content.rfind('}') + 1
-        if start != -1 and end > start:
-            return json.loads(content[start:end])
-        raise
-
-
-async def call_ollama_with_json(model_name: str, prompt: str, schema_class: type, max_retries: int = 3) -> dict:
-    """
-    Call Ollama with JSON mode enabled and parse the response.
-    Includes retry logic for malformed JSON and server errors.
-    """
-    schema_name = schema_class.__name__
-    
-    for attempt in range(max_retries):
-        try:
-            llm = ChatOllama(
-                model=model_name,
-                format="json",
-                temperature=0.1,
-                timeout=120,
-            )
-            schema_desc = get_json_schema_prompt(schema_class)
-            enhanced_prompt = f"""{prompt}
-
-CRITICAL: You MUST respond with a valid JSON object that EXACTLY matches this structure:
-{schema_desc}
-
-RULES:
-1. Return ONLY valid JSON
-2. NO explanations before or after the JSON
-3. NO markdown code blocks (no ```)
-4. NO additional text
-5. Ensure all required fields are present
-6. Follow the exact structure shown above
-
-Your response should start with {{ and end with }}"""
-            
-            response = await llm.ainvoke([HumanMessage(content=enhanced_prompt)])
-            result = safe_parse_json(response.content)
-            if schema_name == "CriticOutput":
-                if "final_output" in result:
-                    if "analysis" not in result["final_output"] or "recommendation" not in result["final_output"]:
-                        raise ValueError(f"Invalid CriticOutput structure. Missing required fields in final_output.")
-                elif "analysis" in result and "recommendation" in result:
-                    result = {"final_output": result}
-                else:
-                    raise ValueError(f"Invalid CriticOutput structure. Missing required fields.")
-            
-            return result
-            
-        except Exception as e:
-            print('Error: ', e)
-            raise
-    
-    raise ValueError(f"Failed to get valid JSON after {max_retries} attempts")
-
+if len(sys.argv) < 3:
+    print("Usage: python main.py <url> <model>")
+    sys.exit(1)
 
 async def main():
     MODEL = sys.argv[2]
