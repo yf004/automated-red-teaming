@@ -183,8 +183,8 @@ def get_json_schema_prompt(schema_class: type) -> str:
   "final_output": {
     "analysis": [
       {
-        "entry_point": "string (URL)",
-        "page_url": "string (URL of the page with the form)",
+        "entry_point": "string (FULL URL)",
+        "page_url": "string (FULL URL of the page with the form)",
         "payloads": {
           "field_name_1": "payload string",
           "field_name_2": "payload string"

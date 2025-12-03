@@ -78,6 +78,7 @@ You are the **Planner Agent**, a professional penetration tester and attack stra
 - **Scanner findings**: Provided by the Scanner Agent in previous messages
 - **Attempt History**:  {attempts}
 - **Goal**: {goal}
+- **Target URL**: {url}
 
 [MEMORY SUMMARY]
 Review the Attempt History array and summarize its key points in a few bullets, for example:
@@ -193,6 +194,7 @@ You are the **Attacker Agent**, an elite exploit developer specialized in NoSQL-
 - **Plans from Planner Agent**: {payloads}
 - **Recommendation from Critic Agent**: {recommendation}
 - **Goal**: {goal}
+- **Target URL**: {url}
 
 [TASK OBJECTIVE]
 For each entry point:
@@ -252,7 +254,7 @@ JSON array `attempts`:
 {attempts}
 
 [TASK]
-
+0. Use rag tool to gather info.
 1. **Reason in Prose**
     - **For each attempt**:
         - **Extract Reflection**: If `response_excerpt` shows a reflected NoSQL fragment, describe how the payload was interpolated and capture the full NoSQL statement.
@@ -269,8 +271,8 @@ After your reasoning, output **only** the following JSON object (no extra text):
 {{
     "analysis": [
         {{
-            "entry_point": "<URL>",
-            "page_url": "<URL of the page with the form>",
+            "entry_point": "<FULL URL>",
+            "page_url": "<FULL URL of the page with the form>",
             "payloads": {{
                 "<field_name_1>": "<payload for field 1>",
                 "<field_name_2>": "<payload for field 2>"
