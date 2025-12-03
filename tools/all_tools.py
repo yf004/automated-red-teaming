@@ -14,6 +14,10 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langgraph.prebuilt import InjectedState
 from langgraph.prebuilt.chat_agent_executor import AgentStateWithStructuredResponse
 from langchain_ollama import OllamaEmbeddings
+from langchain_community.utilities.requests import TextRequestsWrapper
+from langchain_community.agent_toolkits.openapi.toolkit import RequestsToolkit
+from tools.playwright_tools.custom_playwright_toolkit import PlayWrightBrowserToolkit
+
 
 from mcp_client import get_mcp_tools
 
@@ -104,13 +108,21 @@ def rag(json_path: str, name: str, description: str):
     print("RAG initialization complete!")
     return retriever_tool
 
-# Offline RAG using local JSON
+def playwright_tools():
+    async_browser = create_async_playwright_browser(headless=False)  # headful mode
+    toolkit = PlayWrightBrowserToolkit.from_browser(async_browser=async_browser)
+    return toolkit.get_tools()
+
 nosqli_rag_tool = rag(
-    json_path="nosqli_docs.json",  # JSON file generated ahead of time
+    json_path="nosqli_docs.json", 
     name="retrieve_nosqli_information",
     description="Search and return information about NoSQL Injection and payloads from NoSQL Injection Cheat Sheets.",
 )
 
+requests_tools = RequestsToolkit(
+    requests_wrapper=TextRequestsWrapper(headers={}),
+    allow_dangerous_requests=True,
+).get_tools()
 
 file_management_tools = FileManagementToolkit(
     root_dir=str("sandbox"),
@@ -127,7 +139,7 @@ def get_attempts(state: Annotated[PentestState, InjectedState]) -> int:
 
 async def scanner_tools():
     return (
-        (await get_mcp_tools("scanner_mcp.json")) + [search_tool] + web_tools()
+        (await get_mcp_tools("scanner_mcp.json")) + [search_tool] + playwright_tools()
     )
 
 async def planner_tools():
@@ -135,8 +147,7 @@ async def planner_tools():
 
 
 def attacker_tools():
-    return web_tools()
-
+    return playwright_tools() + requests_tools
 
 def report_writer_tools():
     return file_management_tools + [search_tool]
