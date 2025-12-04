@@ -21,7 +21,7 @@ from tools.selenium.selenium import (
     DescribeWebsiteInput,
     FillOutFormInput,
     FindFormInput,
-    GoogleSearchInput.
+    GoogleSearchInput,
     ScrollInput,
     SeleniumWrapper,
 )

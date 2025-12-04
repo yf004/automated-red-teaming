@@ -1,6 +1,6 @@
 from selenium import webdriver
 from selenium.webdriver.remote.webelement import WebElement
-from chromegpt.tools.logging_webelement import LoggingWebElement
+from tools.selenium.logging_webelement import LoggingWebElement
 
 class LoggingWebDriver(webdriver.Chrome):
     def __init__(self, *args, **kwargs):

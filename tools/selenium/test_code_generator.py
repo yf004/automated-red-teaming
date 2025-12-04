@@ -1,5 +1,5 @@
 
-from chromegpt.tools.selenium_code_generator import (
+from tools.selenium.selenium_code_generator import (
     generate_selenium_code,
     wipe_selenium_code,
 )
