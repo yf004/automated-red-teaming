@@ -48,14 +48,31 @@ if len(sys.argv) < 3:
 async def main():
     MODEL = sys.argv[2]
 
-    scanner_agent = create_react_agent(
-        model=ChatOllama(model=MODEL, temperature=0),
-        prompt=scanner_agent_prompt,
-        name="scanner_agent",
-        tools=await scanner_tools(),
-        state_schema=PentestState,
-        debug=True,
-    )
+    async def scanner(state: PentestState):
+        """Scanner agent wrapper that captures the scan report."""
+        scanner_agent = create_react_agent(
+            model=ChatOllama(model=MODEL, temperature=0),
+            prompt=scanner_agent_prompt,
+            name="scanner_agent",
+            tools=await scanner_tools(),
+            state_schema=PentestState,
+            debug=True,
+        )
+        
+        resp = await scanner_agent.ainvoke(state)
+        
+        # Extract the scanner's final message content as the initial scan report
+        scan_report = resp["messages"][-1].content
+        
+        print(f"\n{'='*60}")
+        print("SCANNER REPORT CAPTURED")
+        print(f"Report length: {len(scan_report)} characters")
+        print(f"{'='*60}\n")
+        
+        return {
+            "messages": [resp["messages"][-1]],
+            "initial_scan_report": scan_report,
+        }
 
     
     async def planner(state: PentestState):
@@ -313,7 +330,7 @@ Analyze the attempts and decide if the loop should terminate.
 
     supervisor = create_supervisor(
         model=ChatOllama(model=MODEL, temperature=0),
-        agents=[scanner_agent, pentest_agents, report_writer_agent],
+        agents=[scanner, pentest_agents, report_writer_agent],
         prompt=supervisor_agent_prompt,
         add_handoff_back_messages=True,
         output_mode="last_message",
@@ -347,6 +364,7 @@ Analyze the attempts and decide if the loop should terminate.
                     "raw_attacker_output": None,
                     "raw_planner_output": None,
                     "raw_critic_output": None,
+                    "initial_scan_report": None,  # Initialize the field
                     "goal": goal
                 },
                 {"recursion_limit": 100},

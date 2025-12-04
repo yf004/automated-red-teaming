@@ -29,6 +29,7 @@ from langchain.tools.base import BaseTool
 
 from typing import List
 from mcp_client import get_mcp_tools
+from tools.scanning_tool.nosql_scanner import ScanForNoSQLITool
 
 class PentestState(AgentStateWithStructuredResponse):
     tries: int
@@ -44,6 +45,7 @@ class PentestState(AgentStateWithStructuredResponse):
     raw_attacker_output: Optional[str]
     raw_planner_output: Optional[str]
     raw_critic_output: Optional[str]
+    initial_scan_report: Optional[str]
 
 
 search = GoogleSerperAPIWrapper()
@@ -193,7 +195,7 @@ def get_attempts(state: Annotated[PentestState, InjectedState]) -> int:
 
 async def scanner_tools():
     return (
-        (await get_mcp_tools("scanner_mcp.json")) + [search_tool] + get_selenium_tools()
+        (await get_mcp_tools("scanner_mcp.json")) + [search_tool, ScanForNoSQLITool()] + get_selenium_tools()
     )
 
 async def planner_tools():
