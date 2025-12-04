@@ -16,9 +16,19 @@ from langgraph.prebuilt.chat_agent_executor import AgentStateWithStructuredRespo
 from langchain_ollama import OllamaEmbeddings
 from langchain_community.utilities.requests import TextRequestsWrapper
 from langchain_community.agent_toolkits.openapi.toolkit import RequestsToolkit
-from tools.playwright_tools.custom_playwright_toolkit import PlayWrightBrowserToolkit
+from langchain_community.tools.playwright.utils import create_async_playwright_browser
+from tools.selenium.seleniums import (
+    ClickButtonInput,
+    DescribeWebsiteInput,
+    FillOutFormInput,
+    FindFormInput,
+    GoogleSearchInpsut,
+    ScrollInput,
+    SeleniumWrapper,
+)
+from langchain.tools.base import BaseTool
 
-
+from typing import List
 from mcp_client import get_mcp_tools
 
 class PentestState(AgentStateWithStructuredResponse):
@@ -44,9 +54,58 @@ search_tool = Tool(
     description="Use this to search the web for information",
 )
 
-def web_tools():
-    toolkit = NonBrowserToolkit()
-    return toolkit.get_tools()
+def get_selenium_tools() -> List[BaseTool]:
+    """Get the tools that will be used by the AI agent."""
+    selenium = SeleniumWrapper()
+    tools: List[BaseTool] = [
+        Tool(
+            name="goto",
+            func=selenium.describe_website,
+            description="useful for when you need visit a link or a website",
+            args_schema=DescribeWebsiteInput,
+        ),
+        Tool(
+            name="click",
+            func=selenium.click_button_by_text,
+            description="useful for when you need to click a button/link",
+            args_schema=ClickButtonInput,
+        ),
+        Tool(
+            name="find_form",
+            func=selenium.find_form_inputs,
+            description=(
+                "useful for when you need to find out input forms given a url. Returns"
+                " the input fields to fill out"
+            ),
+            args_schema=FindFormInput,
+        ),
+        Tool(
+            name="fill_form",
+            func=selenium.fill_out_form,
+            description=(
+                "useful for when you need to fill out a form on the current website."
+                " Input should be a json formatted string"
+            ),
+            args_schema=FillOutFormInput,
+        ),
+        Tool(
+            name="scroll",
+            func=selenium.scroll,
+            description=(
+                "useful for when you need to scroll up or down on the current website"
+            ),
+            args_schema=ScrollInput,
+        ),
+        Tool(
+            name="google_search",
+            func=selenium.google_search,
+            description="perform a google search",
+            args_schema=GoogleSearchInput,
+        )
+    ]
+    return tools
+
+
 
 def rag(json_path: str, name: str, description: str):
     # Create a persistent directory for the vector store
@@ -108,11 +167,6 @@ def rag(json_path: str, name: str, description: str):
     print("RAG initialization complete!")
     return retriever_tool
 
-def playwright_tools():
-    async_browser = create_async_playwright_browser(headless=False)  # headful mode
-    toolkit = PlayWrightBrowserToolkit.from_browser(async_browser=async_browser)
-    return toolkit.get_tools()
-
 nosqli_rag_tool = rag(
     json_path="nosqli_docs.json", 
     name="retrieve_nosqli_information",
@@ -129,6 +183,7 @@ file_management_tools = FileManagementToolkit(
 ).get_tools()
 
 
+
 @tool
 def get_attempts(state: Annotated[PentestState, InjectedState]) -> int:
     """
@@ -139,15 +194,16 @@ def get_attempts(state: Annotated[PentestState, InjectedState]) -> int:
 
 async def scanner_tools():
     return (
-        (await get_mcp_tools("scanner_mcp.json")) + [search_tool] + playwright_tools()
+        (await get_mcp_tools("scanner_mcp.json")) + [search_tool] + get_selenium_tools()
     )
 
 async def planner_tools():
     return (await get_mcp_tools("planner_mcp.json")) + [search_tool, nosqli_rag_tool]
 
-
 def attacker_tools():
-    return playwright_tools() + requests_tools
+    return get_selenium_tools() + requests_tools
 
 def report_writer_tools():
     return file_management_tools + [search_tool]
+
+
