@@ -17,17 +17,17 @@ import validators
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
 
-from chromegpt.tools.logging_actionchains import LoggingActionChains
-from chromegpt.tools.logging_webdriver import LoggingWebDriver
-from chromegpt.tools.selenium_code_generator import (
+from tools.selenium.logging_actionchains import LoggingActionChains
+from tools.selenium.logging_webdriver import LoggingWebDriver
+from tools.selenium.selenium_code_generator import (
     generate_selenium_code,
     wipe_selenium_code,
 )
-from chromegpt.tools.logging_webdriver import (
+from tools.selenium.logging_webdriver import (
     clear_selenium_commands_log,
 )
 
-from chromegpt.tools.utils import (
+from tools.selenium.utils import (
     find_parent_element_text,
     get_all_text_elements,
     prettify_text,
