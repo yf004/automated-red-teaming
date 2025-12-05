@@ -118,7 +118,7 @@ def rag(json_path: str, name: str, description: str):
     # Initialize embeddings
     print("Initializing Ollama embeddings...")
     embeddings = OllamaEmbeddings(
-        model="gpt-oss-20b",
+        model="nomic-embed-text",
         base_url="http://localhost:11434"
     )
     print("Ollama embeddings initialized...")
