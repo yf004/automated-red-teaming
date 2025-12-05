@@ -48,8 +48,9 @@ if len(sys.argv) < 3:
 async def main():
     MODEL = sys.argv[2]
 
-    async def scanner(state: PentestState):
-        """Scanner agent wrapper that captures the scan report."""
+    # Create a custom scanner wrapper that captures the scan report
+    async def scanner_wrapper_node(state: PentestState):
+        """Wrapper that runs scanner and captures its output."""
         scanner_agent = create_react_agent(
             model=ChatOllama(model=MODEL, temperature=0),
             prompt=scanner_agent_prompt,
@@ -73,6 +74,16 @@ async def main():
             "messages": [resp["messages"][-1]],
             "initial_scan_report": scan_report,
         }
+
+    # Create the base scanner agent for supervisor
+    scanner_agent = create_react_agent(
+        model=ChatOllama(model=MODEL, temperature=0),
+        prompt=scanner_agent_prompt,
+        name="scanner_agent",
+        tools=await scanner_tools(),
+        state_schema=PentestState,
+        debug=True,
+    )
 
     
     async def planner(state: PentestState):
@@ -296,7 +307,9 @@ Analyze the attempts and decide if the loop should terminate.
         else:
             return "critic_agent"
 
+    # Build pentest subgraph with scanner wrapper
     pentest_subgraph = StateGraph(PentestState)
+    pentest_subgraph.add_node("scanner_wrapper", scanner_wrapper_node)
     pentest_subgraph.add_node("planner_agent", planner)
     pentest_subgraph.add_node("planner_structurer", planner_structurer)
     pentest_subgraph.add_node("attacker_agent", attacker)
@@ -305,7 +318,8 @@ Analyze the attempts and decide if the loop should terminate.
     pentest_subgraph.add_node("critic_structurer", critic_structurer)
     pentest_subgraph.add_node("exploit_evaluator_agent", exploit_evaluator)
 
-    pentest_subgraph.add_edge(START, "planner_agent")
+    pentest_subgraph.add_edge(START, "scanner_wrapper")
+    pentest_subgraph.add_edge("scanner_wrapper", "planner_agent")
     pentest_subgraph.add_edge("planner_agent", "planner_structurer")
     pentest_subgraph.add_edge("planner_structurer", "attacker_agent")
     pentest_subgraph.add_edge("attacker_agent", "attacker_structurer")
@@ -330,13 +344,12 @@ Analyze the attempts and decide if the loop should terminate.
 
     supervisor = create_supervisor(
         model=ChatOllama(model=MODEL, temperature=0),
-        agents=[scanner, pentest_agents, report_writer_agent],
+        agents=[scanner_agent, pentest_agents, report_writer_agent],
         prompt=supervisor_agent_prompt,
         add_handoff_back_messages=True,
         output_mode="last_message",
         state_schema=PentestState,
         tools=[get_attempts],
-        name="supervisor_agent",
     ).compile()
 
     url = sys.argv[1]
