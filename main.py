@@ -336,6 +336,7 @@ Analyze the attempts and decide if the loop should terminate.
         output_mode="last_message",
         state_schema=PentestState,
         tools=[get_attempts],
+        name="supervisor_agent",
     ).compile()
 
     url = sys.argv[1]
