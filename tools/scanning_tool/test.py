@@ -8,12 +8,10 @@ MODEL = "gpt-oss:20b"
 
 async def main():
     tool = ScanForNoSQLITool()
-    # Directly test your tool
     result = tool.run(tool_input={
-        "url": "https://vegetational-tranquilly-annalee.ngrok-free.dev/level1/login",
+        "url": "http://localhost:3000/level1/login",
         "fields": ["username", "password"]
     })
-
 
     print("\n=== TOOL OUTPUT ===")
     print(result)
