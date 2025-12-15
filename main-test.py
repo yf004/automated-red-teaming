@@ -528,7 +528,8 @@ Found Timing based NoSQL Injection:
                     "raw_attacker_output": None,
                     "raw_planner_output": None,
                     "raw_critic_output": None,
-                    "initial_scan_report": initial_scan_report,  # Pass the scan report
+                    "initial_scan_report": initial_scan_report, 
+                    "entry_point": url+'/login',
                     "goal": goal
                 },
                 {"recursion_limit": 100},

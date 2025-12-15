@@ -37,6 +37,7 @@ class PentestState(AgentStateWithStructuredResponse):
     should_terminate: bool
     reason: str
     url: str
+    entry_point: str
     attempts: list[dict[str, Union[dict, str]]]
     recommendation: dict
     successful_payload: Union[None, dict[str, str]]

@@ -51,17 +51,20 @@ class SeleniumWrapper:
     def __init__(self, headless: bool = False) -> None:
         """Initialize Selenium and start interactive session."""
         chrome_options = Options()
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-        chrome_options.add_argument("--window-size=1920,1080")
+
+        chrome_options.binary_location = "/usr/bin/google-chrome"
+
 
         chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+
 
         clear_selenium_commands_log()
 
-        # If you're using a VM or RunPod container
         self.driver = LoggingWebDriver(options=chrome_options)
 
         self.driver.implicitly_wait(10)  # Wait 5 seconds for elements to load

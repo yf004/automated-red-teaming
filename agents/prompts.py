@@ -119,11 +119,10 @@ For each potential NoSQLi entry point discovered in the Initial Scan Report:
     - Extract any reflected NoSQL from `response_excerpt` and explain how the payload was interpolated.
     - Identify specific tweaks (comments, column counts, encoding, trying different field) needed.
 
-**Phase 2: Plan Generation**
-
-1. Determine current objectives. For example, this attempt could be to gather information that will be considered for future attempts (such as determining database type by using provider-specific queries).
-2. Using your analysis, craft **3-4 payloads** per entry point. 
-3. **Craft payloads**
+**Phase 2: *Craft payloads**
+    - Do NOT test for types of injections. This has been done and everything you need is the in the initial scan report.
+    - Refer to the goal and ensure that every single payload is made to achieve the goal.
+    - Do NOT use other techniques other than NoSQL injection and the vulnerabilities found in the scanner. SQL injection and bruteforcing the password is NOT allowed.
     - Remember that you can use comments to invalidate the back part of the query.
     - For each payload entry, ensure you include a `"payloads"` object mapping **every** input field name to its payload value.
 
@@ -171,8 +170,8 @@ For each potential NoSQLi entry point discovered in the Initial Scan Report:
 ```json
 [
     {{
-        "entry_point": "<FULL URL>",
-        "page_url": "<FULL URL of the page with the form>",
+        "entry_point": "<PUT THIS ENTRY POINT EXACTLY: {entry_point}>",
+        "page_url": " ">PUT THIS URL EXACTLY: {url}>",
         "payload_sequence": [
             {{
                 "type": "<boolean|union|…>",
