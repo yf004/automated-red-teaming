@@ -44,6 +44,23 @@ class CriticOutput(TypedDict):
     final_output: dict[str, Union[list[dict], dict]]
 
 
+class ScannerInputOutput(TypedDict):
+    """
+    Output from the scanner input generator agent.
+    Contains the structured inputs that should be passed to the NoSQL scanner tool.
+    """
+    scanner_tool_inputs: dict[str, Union[str, list, dict]] = Field(
+        description="""
+The inputs that should be passed to the NoSQL scanner tool.
+This should contain all necessary parameters like:
+- target_url: The URL to scan
+- scan_depth: How deep to crawl
+- endpoints_to_test: List of endpoints
+- other scanner-specific parameters
+"""
+    )
+
+
 def print_planner_output(data: dict) -> None:
     """
     Pretty print Planner Agent output.
@@ -172,6 +189,26 @@ def print_evaluator_output(data: dict) -> None:
     
     print("\n" + "="*80 + "\n")
 
+
+def print_scanner_input_output(data: dict) -> None:
+    """
+    Pretty print Scanner Input Generator output.
+    """
+    print("\n" + "="*80)
+    print("SCANNER INPUT GENERATOR OUTPUT")
+    print("="*80)
+    
+    scanner_inputs = data.get("scanner_tool_inputs", {})
+    
+    print("\n  Scanner Tool Inputs:")
+    for key, value in scanner_inputs.items():
+        if isinstance(value, (list, dict)):
+            print(f"    {key}: {json.dumps(value, indent=6)}")
+        else:
+            print(f"    {key}: {value}")
+    
+    print("\n" + "="*80 + "\n")
+
     
 def get_json_schema_prompt(schema_class: type) -> str:
     """
@@ -249,6 +286,19 @@ def get_json_schema_prompt(schema_class: type) -> str:
   "successful_payload": null or {
     "field_name_1": "payload string",
     "field_name_2": "payload string"
+  }
+}
+"""
+    elif schema_class.__name__ == "ScannerInputOutput":
+        return """
+{
+  "scanner_tool_inputs": {
+    "target_url": "string (the URL to scan)",
+    "scan_depth": "number (how deep to crawl)",
+    "endpoints": ["list of endpoint URLs to test"],
+    "parameters": {
+      "additional": "scanner parameters"
+    }
   }
 }
 """
@@ -353,6 +403,8 @@ Your response should start with {{ and end with }}"""
                     print_attacker_output(result)
                 elif schema_name == "ExploitEvaluatorOutput":
                     print_evaluator_output(result)
+                elif schema_name == "ScannerInputOutput":
+                    print_scanner_input_output(result)
             
             return result
             

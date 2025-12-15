@@ -29,7 +29,8 @@ from langchain.tools.base import BaseTool
 
 from typing import List
 from mcp_client import get_mcp_tools
-from tools.scanning_tool.nosql_scanner import ScanForNoSQLITool
+# NOTE: We do NOT import ScanForNoSQLITool here for scanner_input_tools
+# It will only be imported in the external scanner execution
 
 class PentestState(AgentStateWithStructuredResponse):
     tries: int
@@ -45,6 +46,8 @@ class PentestState(AgentStateWithStructuredResponse):
     raw_attacker_output: Optional[str]
     raw_planner_output: Optional[str]
     raw_critic_output: Optional[str]
+    raw_scanner_input: Optional[str]  # NEW: for scanner input generator
+    scanner_tool_inputs: Optional[dict]  # NEW: structured scanner inputs
     initial_scan_report: Optional[str]
 
 
@@ -193,10 +196,20 @@ def get_attempts(state: Annotated[PentestState, InjectedState]) -> int:
     return state["tries"]
 
 
-async def scanner_tools():
+async def scanner_input_tools():
+    """
+    Tools for the scanner input generator agent.
+    This agent explores the site to determine what inputs to pass to the scanner,
+    but does NOT include the actual scanner tool itself.
+    """
     return (
-        (await get_mcp_tools("scanner_mcp.json")) + [search_tool, ScanForNoSQLITool()] + get_selenium_tools()
+        (await get_mcp_tools("scanner_mcp.json")) + 
+        [search_tool] + 
+        get_selenium_tools()
+        # NOTE: ScanForNoSQLITool() is NOT included here
+        # The scanner will be run externally after this agent generates inputs
     )
+
 
 async def planner_tools():
     return (await get_mcp_tools("planner_mcp.json")) + [search_tool, nosqli_rag_tool]
@@ -208,3 +221,16 @@ def report_writer_tools():
     return file_management_tools + [search_tool]
 
 
+# Keep the old scanner_tools function for backwards compatibility if needed,
+# but mark it as deprecated
+async def scanner_tools():
+    """
+    DEPRECATED: This function is kept for backwards compatibility only.
+    Use scanner_input_tools() for the new workflow.
+    """
+    from tools.scanning_tool.nosql_scanner import ScanForNoSQLITool
+    return (
+        (await get_mcp_tools("scanner_mcp.json")) + 
+        [search_tool, ScanForNoSQLITool()] + 
+        get_selenium_tools()
+    )

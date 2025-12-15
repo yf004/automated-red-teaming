@@ -9,6 +9,7 @@ MODEL = "gpt-oss:20b"
 async def main():
     tool = ScanForNoSQLITool()
     result = tool.run(tool_input={
+        # "url": "http://thzse-213-245-98-157.a.free.pinggy.link/level1/login",
         "url": "http://localhost:3000/level1/login",
         "fields": ["username", "password"]
     })
