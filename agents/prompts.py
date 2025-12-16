@@ -170,8 +170,8 @@ For each potential NoSQLi entry point discovered in the Initial Scan Report:
 ```json
 [
     {{
-        "entry_point": "<PUT THIS ENTRY POINT EXACTLY: {entry_point}>",
-        "page_url": " ">PUT THIS URL EXACTLY: {url}>",
+        "entry_point": "{entry_point}",
+        "page_url": " "{url}",
         "payload_sequence": [
             {{
                 "type": "<boolean|union|…>",
@@ -208,10 +208,9 @@ You are the **Attacker Agent**, an elite exploit developer specialized in NoSQL-
 - **Recommendation from Critic Agent**: {recommendation}
 - **Goal**: {goal}
 - **Target URL**: {url}
+- **Entry Point: {entry_point}
 
 [TASK OBJECTIVE]
-For each entry point:
-
 1. Execute each **payload** from the Planner Agent and Critic Agent in order.
 2. Use **Playwright** first, before trying other methods
 3. **Capture Outcomes**
