@@ -36,7 +36,6 @@ from tools.all_tools import (
     get_attempts,
     planner_tools,
     report_writer_tools,
-    scanner_input_tools,  # NEW: tools for generating scanner inputs (no actual scanner)
 )
 
 nest_asyncio.apply()
@@ -93,10 +92,10 @@ async def main():
         but does NOT execute the tool itself.
         """
         scanner_input_agent = create_react_agent(
-            model=ChatOllama(model=MODEL, temperature=0),
+            model=ChatOllama(model=MODEL, temperature=0, streaming=False),
             prompt=scanner_input_generator_prompt,
             name="scanner_input_generator",
-            tools=await scanner_input_tools(),  # Tools that help explore, but no actual scanner
+            tools=await planner_tools(),  # Tools that help explore, but no actual scanner
             state_schema=PentestState,
             debug=True,
         )
@@ -145,7 +144,7 @@ async def main():
     async def planner(state: PentestState):
         """Planner agent returns raw natural language output."""
         planner_agent = create_react_agent(
-            model=ChatOllama(model=MODEL, temperature=0, verbose=False),
+            model=ChatOllama(model=MODEL, temperature=0, streaming=False, verbose=False),
             prompt=planner_agent_prompt,
             name="planner_agent",
             tools=await planner_tools(),
@@ -190,7 +189,7 @@ async def main():
     async def attacker(state: PentestState):
         """Attacker agent returns raw natural language output (no structured output)."""
         attacker_agent = create_react_agent(
-            model=ChatOllama(model=MODEL, temperature=0, verbose=False),
+            model=ChatOllama(model=MODEL, temperature=0, streaming=False, verbose=False),
             prompt=attacker_agent_prompt,
             name="attacker_agent",
             tools=attacker_tools(),
@@ -233,7 +232,7 @@ async def main():
     async def critic(state: PentestState):
         """Critic agent returns raw natural language output."""
         critic_agent = create_react_agent(
-            model=ChatOllama(model=MODEL, temperature=0, verbose=False),
+            model=ChatOllama(model=MODEL, temperature=0, streaming=False, verbose=False),
             prompt=critic_agent_prompt,
             name="critic_agent",
             tools=await planner_tools(),
@@ -413,7 +412,7 @@ NOTE: Do NOT terminate to request re-scanning. The scanner has already run and c
     # PHASE 3: REPORT WRITER
     # ============================================================================
     report_writer_agent = create_react_agent(
-        model=ChatOllama(model=MODEL, temperature=0.3),
+        model=ChatOllama(model=MODEL, temperature=0.3, streaming=False),
         prompt=report_writer_agent_prompt,
         name="report_writer_agent",
         tools=report_writer_tools(),
