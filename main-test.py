@@ -463,11 +463,11 @@ NOTE: Do NOT terminate to request re-scanning. The scanner has already run and c
     
 
     
-    initial_scan_report = '''
+    initial_scan_report = f'''
 === TOOL OUTPUT ===
-Scan completed for https://vegetational-tranquilly-annalee.ngrok-free.dev/level1/login
+Scan completed for {url}/login
 
-URL: https://vegetational-tranquilly-annalee.ngrok-free.dev/level1/login
+URL: {url}/login
 Method: POST
 Running Error based scan...
 Running Boolean based scan...
@@ -475,32 +475,32 @@ Running Timing based scan...
 
 === RESULTS ===
 Found Blind NoSQL Injection:
-        URL: https://vegetational-tranquilly-annalee.ngrok-free.dev/level1/login
+        URL: {url}/login
         param:
         Injection: =true: ';return true;'}//, false: "';return false;'}//"
 
 Found Blind NoSQL Injection:
-        URL: https://vegetational-tranquilly-annalee.ngrok-free.dev/level1/login
+        URL: {url}/login
         param:
         Injection: =true: ' || 'a'=='a' || 'a'=='a, false: "' && 'a'!='a' && 'a'!='a"
 
 Found Blind NoSQL Injection:
-        URL: https://vegetational-tranquilly-annalee.ngrok-free.dev/level1/login
+        URL: {url}/login
         param:
         Injection: =true: ';return true;', false: "';return false;'"
 
 Found Blind NoSQL Injection:
-        URL: https://vegetational-tranquilly-annalee.ngrok-free.dev/level1/login
+        URL: {url}/login
         param:
         Injection: =true: ' || 'a'=='a' || 'a'=='a//, false: "' && 'a'!='a' && 'a'!='a//"
 
 Found Timing based NoSQL Injection:
-        URL: https://vegetational-tranquilly-annalee.ngrok-free.dev/level1/login
+        URL: {url}/login
         param:
         Injection: ="';sleep(500);'"
 
 Found Timing based NoSQL Injection:
-        URL: https://vegetational-tranquilly-annalee.ngrok-free.dev/level1/login
+        URL: {url}/login
         param:
         Injection: ="';sleep(500);'}//"
     '''
