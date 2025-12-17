@@ -477,7 +477,7 @@ Running Timing based scan...
 Found Blind NoSQL Injection:
         URL: {url}/login
         param:
-        Injection: =true: ';return true;'}//, false: "';return false;'}//"
+        Injection: =true: ';return true;'}}]//, false: "';return false;'}}//"
 
 Found Blind NoSQL Injection:
         URL: {url}/login
@@ -502,7 +502,7 @@ Found Timing based NoSQL Injection:
 Found Timing based NoSQL Injection:
         URL: {url}/login
         param:
-        Injection: ="';sleep(500);'}//"
+        Injection: ="';sleep(500);'}}//"
     '''
 
     
