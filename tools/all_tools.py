@@ -3,7 +3,6 @@ import os
 from langchain_chroma import Chroma
 import json
 from langchain_core.documents import Document
-
 from langchain.tools.retriever import create_retriever_tool
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_community.utilities import GoogleSerperAPIWrapper
@@ -26,12 +25,9 @@ from tools.selenium.selenium import (
     SeleniumWrapper,
 )
 from langchain.tools.base import BaseTool
-from 
 from typing import List
 from mcp_client import get_mcp_tools
 from tools.web_toolkit import Toolkit
-# NOTE: We do NOT import ScanForNoSQLITool here for scanner_input_tools
-# It will only be imported in the external scanner execution
 
 class PentestState(AgentStateWithStructuredResponse):
     tries: int
@@ -111,8 +107,6 @@ def get_selenium_tools() -> List[BaseTool]:
     ]
     return tools
 
-
-
 def rag(json_path: str, name: str, description: str):
     # Create a persistent directory for the vector store
     persist_directory = "vector_store"
@@ -188,15 +182,12 @@ file_management_tools = FileManagementToolkit(
     root_dir=str("sandbox"),
 ).get_tools()
 
-
-
 @tool
 def get_attempts(state: Annotated[PentestState, InjectedState]) -> int:
     """
     Returns the number of attempts made by the Pentest Agents.
     """
     return state["tries"]
-
 
 async def scanner_input_tools():
     web_toolkit = Toolkit()
@@ -207,9 +198,8 @@ async def scanner_input_tools():
         web_tools
     )
 
-
 async def planner_tools():
-    return (await get_mcp_tools("planner_mcp.json")) + [search_tool, nosqli_rag_tool] + Toolkit.
+    return (await get_mcp_tools("planner_mcp.json")) + [search_tool, nosqli_rag_tool]
 
 def attacker_tools():
     return get_selenium_tools() + requests_tools

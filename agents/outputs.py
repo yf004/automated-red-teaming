@@ -52,13 +52,11 @@ class ScannerInputOutput(TypedDict):
     scanner_tool_inputs: dict[str, Union[str, list, dict]] = Field(
         description="""
 The inputs that should be passed to the NoSQL scanner tool.
-This should contain all necessary parameters like:
+This should contain all necessary parameters:
 - target_url: The URL to scan
-- scan_depth: How deep to crawl
 - endpoints_to_test: List of endpoints
-- other scanner-specific parameters
-"""
-    )
+- fields: List of fields in the endpoint form
+""")
 
 
 def print_planner_output(data: dict) -> None:
@@ -295,9 +293,9 @@ def get_json_schema_prompt(schema_class: type) -> str:
   "scanner_tool_inputs": {
     "target_url": "string (the URL to scan)",
     "scan_depth": "number (how deep to crawl)",
-    "endpoints": ["list of endpoint URLs to test"],
-    "parameters": {
-      "additional": "scanner parameters"
+    "endpoints": "string (the ENDPOINT API URL to test),
+    "fields": {
+      ["list of endpoint parameters"]
     }
   }
 }

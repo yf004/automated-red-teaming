@@ -1,7 +1,7 @@
 """Tool that calls Selenium."""
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import StaleElementReferenceException
+from selenium.common.exceptions import StaleElementReferenceException, WebDriverException
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -12,7 +12,8 @@ import json
 import re
 import time
 import urllib.parse
-from typing import Any, Dict, List, Optional
+import requests
+from typing import Any, Dict, List, Optional, Union
 
 import validators
 from bs4 import BeautifulSoup
@@ -66,17 +67,206 @@ class SeleniumWrapper:
         clear_selenium_commands_log()
 
         self.driver = LoggingWebDriver(options=chrome_options)
-
         self.driver.implicitly_wait(10)  # Wait 5 seconds for elements to load
+        self.session = requests.Session()  # For making HTTP requests
 
     def __del__(self) -> None:
         """Close Selenium session."""
         # output driver_logs to selenium_commands.log file
 
         self.driver.close()
+        self.session.close()
         wipe_selenium_code()
         generate_selenium_code("selenium_commands.log", "selenium_code.py")
 
+    def make_post_request(self, url: str, data: Optional[Dict[str, Any]] = None, 
+                         json_data: Optional[Dict[str, Any]] = None, 
+                         headers: Optional[Dict[str, str]] = None,
+                         cookies: Optional[Dict[str, str]] = None,
+                         include_session_cookies: bool = True) -> str:
+        """
+        Make a POST request to a URL with optional data, JSON, headers, and cookies.
+        
+        Args:
+            url: The URL to send the POST request to
+            data: Form data to send (for application/x-www-form-urlencoded)
+            json_data: JSON data to send (for application/json)
+            headers: Additional headers to include in the request
+            cookies: Additional cookies to include in the request
+            include_session_cookies: Whether to include cookies from the current browser session
+            
+        Returns:
+            String containing the response status code and text/content
+        """
+        # Validate URL
+        if not validators.url(url):
+            return f"Invalid URL: {url}. Please provide a valid URL starting with http:// or https://"
+        
+        # Prepare request headers
+        request_headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        if headers:
+            request_headers.update(headers)
+        
+        # Prepare cookies
+        request_cookies = {}
+        
+        if include_session_cookies:
+            # Get cookies from the current browser session
+            selenium_cookies = self.driver.get_cookies()
+            for cookie in selenium_cookies:
+                request_cookies[cookie['name']] = cookie['value']
+        
+        if cookies:
+            request_cookies.update(cookies)
+        
+        # Make the POST request
+        try:
+            if json_data:
+                # Send as JSON
+                response = self.session.post(
+                    url, 
+                    json=json_data, 
+                    headers=request_headers,
+                    cookies=request_cookies if request_cookies else None,
+                    timeout=30
+                )
+            elif data:
+                # Send as form data
+                response = self.session.post(
+                    url, 
+                    data=data, 
+                    headers=request_headers,
+                    cookies=request_cookies if request_cookies else None,
+                    timeout=30
+                )
+            else:
+                # Send empty POST request
+                response = self.session.post(
+                    url, 
+                    headers=request_headers,
+                    cookies=request_cookies if request_cookies else None,
+                    timeout=30
+                )
+            
+            # Format the response
+            result = f"POST Request to: {url}\n"
+            result += f"Status Code: {response.status_code}\n"
+            
+            if response.headers.get('Content-Type', '').startswith('application/json'):
+                try:
+                    json_response = response.json()
+                    result += f"JSON Response: {json.dumps(json_response, indent=2)}\n"
+                except ValueError:
+                    result += f"Response Text: {response.text[:2000]}...\n" if len(response.text) > 2000 else f"Response Text: {response.text}\n"
+            else:
+                result += f"Response Text: {response.text[:2000]}...\n" if len(response.text) > 2000 else f"Response Text: {response.text}\n"
+            
+            # Update browser cookies if needed
+            if include_session_cookies:
+                # Update Selenium cookies with response cookies
+                for name, value in response.cookies.items():
+                    self.driver.add_cookie({'name': name, 'value': value})
+            
+            return result
+            
+        except requests.exceptions.RequestException as e:
+            return f"Error making POST request to {url}: {str(e)}"
+        except Exception as e:
+            return f"Unexpected error: {str(e)}"
+
+    def post_from_form(self, form_selector: Optional[str] = None, 
+                      form_data: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Find a form on the current page and submit it via POST.
+        
+        Args:
+            form_selector: CSS selector or XPath to find the form (default: first form on page)
+            form_data: Data to fill in the form (overrides existing values)
+            
+        Returns:
+            Result of form submission
+        """
+        try:
+            # Find the form
+            if form_selector:
+                if form_selector.startswith('//'):
+                    # XPath selector
+                    form_element = self.driver.find_element(By.XPATH, form_selector)
+                else:
+                    # CSS selector
+                    form_element = self.driver.find_element(By.CSS_SELECTOR, form_selector)
+            else:
+                # Find first form on page
+                form_element = self.driver.find_element(By.TAG_NAME, "form")
+            
+            # Get form details
+            action = form_element.get_attribute("action")
+            method = form_element.get_attribute("method") or "GET"
+            
+            if not action:
+                # If no action, use current URL
+                action = self.driver.current_url
+            
+            # Convert relative URL to absolute
+            if not action.startswith(('http://', 'https://')):
+                if action.startswith('/'):
+                    # Relative to domain root
+                    current_url = urllib.parse.urlparse(self.driver.current_url)
+                    action = f"{current_url.scheme}://{current_url.netloc}{action}"
+                else:
+                    # Relative to current path
+                    current_url = urllib.parse.urlparse(self.driver.current_url)
+                    current_path = current_url.path.rsplit('/', 1)[0] if '/' in current_url.path else ''
+                    action = f"{current_url.scheme}://{current_url.netloc}{current_path}/{action}"
+            
+            # Get all form inputs
+            input_elements = form_element.find_elements(By.XPATH, ".//input | .//textarea | .//select")
+            
+            # Prepare form data
+            form_data_to_submit = {}
+            for element in input_elements:
+                input_name = element.get_attribute("name")
+                input_type = element.get_attribute("type")
+                input_value = element.get_attribute("value") or ""
+                
+                if input_name and input_type not in ['submit', 'button', 'reset']:
+                    # Use provided data if available, otherwise use existing value
+                    if form_data and input_name in form_data:
+                        form_data_to_submit[input_name] = form_data[input_name]
+                    else:
+                        form_data_to_submit[input_name] = input_value
+            
+            # If no specific form data provided and method is POST, submit the form
+            if method.upper() == "POST" and not form_data:
+                # Let Selenium handle the form submission
+                submit_button = form_element.find_element(By.XPATH, ".//input[@type='submit'] | .//button[@type='submit']")
+                if submit_button:
+                    before_content = self.describe_website()
+                    submit_button.click()
+                    time.sleep(3)  # Wait for submission
+                    after_content = self.describe_website()
+                    
+                    if before_content != after_content:
+                        return f"Form submitted successfully. Page changed. Now {after_content}"
+                    else:
+                        return "Form submitted but page did not change significantly."
+                else:
+                    return "No submit button found in the form."
+            else:
+                # Use our POST request method
+                if method.upper() == "POST":
+                    return self.make_post_request(action, data=form_data_to_submit)
+                else:
+                    # For GET forms, construct URL with query parameters
+                    query_string = urllib.parse.urlencode(form_data_to_submit)
+                    get_url = f"{action}?{query_string}"
+                    return self.describe_website(get_url)
+                    
+        except Exception as e:
+            return f"Error submitting form: {str(e)}"
 
     def previous_webpage(self) -> str:
         """Go back in browser history."""
@@ -410,6 +600,62 @@ class SeleniumWrapper:
         if buttons_text:
             interactable_output += f"Click on these buttons: {json.dumps(buttons_text)}"
         return interactable_output
+
+
+# New Pydantic models for POST request functionality
+class PostRequestInput(BaseModel):
+    """POST request input model."""
+    
+    url: str = Field(
+        ...,
+        description="Full URL to send the POST request to",
+        example="https://api.example.com/submit"
+    )
+    
+    data: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Form data to send (for application/x-www-form-urlencoded)",
+        example={"name": "John", "email": "john@example.com"}
+    )
+    
+    json_data: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="JSON data to send (for application/json)",
+        example={"user": {"name": "John", "age": 30}}
+    )
+    
+    headers: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Additional headers to include in the request",
+        example={"Authorization": "Bearer token123", "Content-Type": "application/json"}
+    )
+    
+    cookies: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Additional cookies to include in the request",
+        example={"session_id": "abc123"}
+    )
+    
+    include_session_cookies: bool = Field(
+        default=True,
+        description="Whether to include cookies from the current browser session"
+    )
+
+
+class PostFormInput(BaseModel):
+    """POST form submission input model."""
+    
+    form_selector: Optional[str] = Field(
+        default=None,
+        description="CSS selector or XPath to find the form (default: first form on page)",
+        example="#login-form or //form[@id='login-form']"
+    )
+    
+    form_data: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Data to fill in the form (overrides existing values)",
+        example={"username": "user123", "password": "pass123"}
+    )
 
 
 class GoogleSearchInput(BaseModel):
