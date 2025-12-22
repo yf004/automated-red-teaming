@@ -1,16 +1,18 @@
-# test_direct_tool.py
-
+import sys
 import asyncio
 from langchain_community.chat_models import ChatOllama
 from nosql_scanner import ScanForNoSQLITool
 
-MODEL = "gpt-oss:20b"
 
-async def main():
+async def main(url):
+    if not url:
+        print("Error: No URL provided")
+        print("Usage: python script.py <url>")
+        return
+    
     tool = ScanForNoSQLITool()
     result = tool.run(tool_input={
-        # "url": "http://thzse-213-245-98-157.a.free.pinggy.link/level1/login",
-        "url": "http://localhost:3000/level1/login",
+        "url": url + "/level1/login",
         "fields": ["username", "password"]
     })
 
@@ -18,4 +20,10 @@ async def main():
     print(result)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    if len(sys.argv) < 2:
+        print("Error: Please provide a URL as an argument")
+        print("Usage: python script.py <url>")
+        sys.exit(1)
+    
+    url = sys.argv[1].rstrip('/')  # Remove trailing slash if present
+    asyncio.run(main(url))
