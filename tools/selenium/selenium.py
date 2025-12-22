@@ -450,11 +450,11 @@ class FindFormInput(BaseModel):
 
 class FillOutFormInput(BaseModel):
     """Fill out form input model."""
-
-    form_input: Optional[str] = Field(
+    
+    form_input: Dict[str, Any] = Field(  # Change from str to Dict
         default=None,
-        description="json formatted string with the input fields and their values",
-        example='{"email": "foo@bar.com","name": "foo bar"}',
+        description="dictionary with the input fields and their values",
+        example={"email": "foo@bar.com", "name": "foo bar"},
     )
 
 

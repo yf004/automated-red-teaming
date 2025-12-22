@@ -118,11 +118,6 @@ class SubmitFormTool(BaseTool):
 
 
 class Toolkit(BaseToolkit):
-    """
-    Replacement PlayWrightBrowserToolkit for AI agents.
-    Uses requests/BeautifulSoup instead of a full browser.
-    """
-
     class Config:
         extra = Extra.forbid
         arbitrary_types_allowed = True
@@ -131,7 +126,7 @@ class Toolkit(BaseToolkit):
         return [
             FetchPageTool(),
             # ExtractTextTool(),
-            # ExtractHTMLTool(),
+            ExtractHTMLTool(),
             ExtractLinksTool(),
             ParseFormTool(),
             SubmitFormTool()
