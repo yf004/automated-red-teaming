@@ -1265,7 +1265,6 @@ func run(urlPtr *C.char, requestDataPtr *C.char) *C.char {
 
 	var report strings.Builder
 	report.WriteString(fmt.Sprintf("URL: %s\n", target))
-	report.WriteString(fmt.Sprintf("Method: POST\n"))
 
 	requireHTTPS := false
 	userAgent := "Mozilla/5.0 (compatible; NoSQLi-Scanner/1.0)"
@@ -1282,14 +1281,10 @@ func run(urlPtr *C.char, requestDataPtr *C.char) *C.char {
 	attackObj.Request.Method = "POST"
 
 	var injectables []InjectionObject
-	report.WriteString("Running Error based scan...\n")
 	injectables = append(injectables, ErrorBasedInjectionTest(attackObj)...)
-	report.WriteString("Running Boolean based scan...\n")
 	injectables = append(injectables, BlindBooleanInjectionTest(attackObj)...)
-	report.WriteString("Running Timing based scan...\n")
 	injectables = append(injectables, TimingInjectionTest(attackObj)...)
 
-	report.WriteString("\n=== RESULTS ===\n")
 	report.WriteString(display(injectables))
 
 	return C.CString(report.String())

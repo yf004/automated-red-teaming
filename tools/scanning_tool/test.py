@@ -12,7 +12,7 @@ async def main(url):
     
     tool = ScanForNoSQLITool()
     result = tool.run(tool_input={
-        "url": url + "/level1/login",
+        "url": url + "/level2/login",
         "fields": ["username", "password"]
     })
 
