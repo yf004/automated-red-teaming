@@ -202,7 +202,9 @@ async def planner_tools():
     return (await get_mcp_tools("planner_mcp.json")) + [search_tool, nosqli_rag_tool]
 
 def attacker_tools():
-    return get_selenium_tools() + requests_tools
+    web_toolkit = Toolkit()
+    web_tools = web_toolkit.get_tools()
+    return web_tools + requests_tools
 
 def report_writer_tools():
     return file_management_tools + [search_tool]

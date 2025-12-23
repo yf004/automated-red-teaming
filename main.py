@@ -20,7 +20,7 @@ from agents.outputs import(
     AttackerOutput, 
     PlannerOutput, 
     CriticOutput,
-    ScannerInputOutput,  # NEW: for scanner tool inputs
+    ScannerInputOutput,
     call_ollama_with_json
 )
 from langchain_core.exceptions import OutputParserException

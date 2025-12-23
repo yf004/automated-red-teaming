@@ -1,6 +1,5 @@
 from typing import TypedDict, Union
 from pydantic import Field
-from typing import TypedDict, Union
 import json
 import warnings
 import nest_asyncio
@@ -8,9 +7,9 @@ from langchain_ollama.chat_models import ChatOllama
 from langchain_core.messages import HumanMessage, AIMessage
 
 
-
 nest_asyncio.apply()
 warnings.filterwarnings("ignore", category=ResourceWarning)
+
 
 class ExploitEvaluatorOutput(TypedDict):
     should_terminate: bool = Field(
@@ -36,12 +35,29 @@ NO explanations. NO markdown. NO pre-text or post-text.
 class AttackerOutput(TypedDict):
     final_output: list[dict[str, Union[str, dict]]]
 
+
 class PlannerOutput(TypedDict):
-    final_output: dict[str, Union[str, list]]
+    endpoint: str = Field(description="The full URL endpoint to target")
+    payloads: list[dict[str, str]] = Field(
+        description="""
+List of 5 payloads to test. Each payload should have:
+- field_name: Which field to inject into
+- payload: The actual injection string
+- description: What this tests
+"""
+    )
 
 
 class CriticOutput(TypedDict):
-    final_output: dict[str, Union[list[dict], dict]]
+    decision: str = Field(
+        description="Must be one of: 'rescan', 'replan', 'success', 'failure'"
+    )
+    reasoning: str = Field(
+        description="Explanation of why this decision was made"
+    )
+    suggestions: str = Field(
+        description="Specific suggestions for next iteration if applicable"
+    )
 
 
 class ScannerInputOutput(TypedDict):
@@ -54,7 +70,7 @@ class ScannerInputOutput(TypedDict):
 The inputs that should be passed to the NoSQL scanner tool.
 This should contain all necessary parameters:
 - target_url: The URL to scan
-- endpoints_to_test: List of endpoints
+- endpoint: Specific endpoint to test
 - fields: List of fields in the endpoint form
 """)
 
@@ -67,30 +83,20 @@ def print_planner_output(data: dict) -> None:
     print("PLANNER AGENT OUTPUT")
     print("="*80)
     
-    final_output = data.get("final_output", [])
+    endpoint = data.get("endpoint", "N/A")
+    payloads = data.get("payloads", [])
     
-    for idx, entry in enumerate(final_output, 1):
-        print(f"\n[Entry Point #{idx}]")
-        print(f"  Entry Point: {entry.get('entry_point', 'N/A')}")
-        print(f"  Page URL: {entry.get('page_url', 'N/A')}")
-        print(f"  Justification: {entry.get('justification', 'N/A')}")
-        
-        payload_sequence = entry.get('payload_sequence', [])
-        print(f"\n  Payload Sequence ({len(payload_sequence)} payload(s)):")
-        
-        for pidx, payload in enumerate(payload_sequence, 1):
-            print(f"\n    [Payload #{pidx}]")
-            print(f"      Type: {payload.get('type', 'N/A')}")
-            print(f"      Reason: {payload.get('reason', 'N/A')}")
-            print(f"      Payloads:")
-            
-            payloads_dict = payload.get('payloads', {})
-            for field_name, field_payload in payloads_dict.items():
-                print(f"        - {field_name}: {field_payload}")
-        
-        print("\n" + "-"*80)
+    print(f"\nTarget Endpoint: {endpoint}")
+    print(f"\nGenerated {len(payloads)} Payloads:\n")
     
-    print()
+    for idx, payload in enumerate(payloads, 1):
+        print(f"  [Payload #{idx}]")
+        print(f"    Field: {payload.get('field_name', 'N/A')}")
+        print(f"    Payload: {payload.get('payload', 'N/A')}")
+        print(f"    Description: {payload.get('description', 'N/A')}")
+        print()
+    
+    print("="*80 + "\n")
 
 
 def print_critic_output(data: dict) -> None:
@@ -101,32 +107,15 @@ def print_critic_output(data: dict) -> None:
     print("CRITIC AGENT OUTPUT")
     print("="*80)
     
-    final_output = data.get("final_output", {})
+    decision = data.get("decision", "N/A")
+    reasoning = data.get("reasoning", "N/A")
+    suggestions = data.get("suggestions", "N/A")
     
-    print("\n[ANALYSIS]")
-    analysis_list = final_output.get("analysis", [])
-    
-    for idx, analysis in enumerate(analysis_list, 1):
-        print(f"\n  Analysis #{idx}:")
-        print(f"    Entry Point: {analysis.get('entry_point', 'N/A')}")
-        print(f"    Page URL: {analysis.get('page_url', 'N/A')}")
-        print(f"    Reflection: {analysis.get('reflection', 'None')}")
-        print(f"    Analysis: {analysis.get('analysis', 'N/A')}")
-        
-        print(f"    Payloads Tested:")
-        payloads = analysis.get('payloads', {})
-        for field_name, payload in payloads.items():
-            print(f"      - {field_name}: {payload}")
-        print()
-    
-    print("\n[RECOMMENDATION]")
-    recommendation = final_output.get("recommendation", {})
-    print(f"  Reason: {recommendation.get('reason', 'N/A')}")
-    print(f"  Recommended Payloads:")
-    
-    rec_payloads = recommendation.get('payloads', {})
-    for field_name, payload in rec_payloads.items():
-        print(f"    - {field_name}: {payload}")
+    print(f"\nDecision: {decision.upper()}")
+    print(f"\nReasoning:")
+    print(f"  {reasoning}")
+    print(f"\nSuggestions:")
+    print(f"  {suggestions}")
     
     print("\n" + "="*80 + "\n")
 
@@ -212,94 +201,62 @@ def get_json_schema_prompt(schema_class: type) -> str:
     """
     Generate a JSON schema prompt from a Pydantic TypedDict class.
     """
-    if schema_class.__name__ == "CriticOutput":
+    # Handle dict type for free-form schemas (like reports)
+    if schema_class == dict:
         return """
 {
-  "final_output": {
-    "analysis": [
-      {
-        "entry_point": "string (FULL URL)",
-        "page_url": "string (FULL URL of the page with the form)",
-        "payloads": {
-          "field_name_1": "payload string",
-          "field_name_2": "payload string"
-        },
-        "reflection": "string or null (full NoSQL command)",
-        "analysis": "string (explanation)"
-      }
-    ],
-    "recommendation": {
-      "payloads": {
-        "field1": "payload string",
-        "field2": "payload string"
-      },
-      "reason": "string (why this payload should succeed)"
-    }
-  }
+  (free-form JSON object with appropriate structure for the task)
 }
 """
-    elif schema_class.__name__ == "PlannerOutput":
+    
+    if schema_class.__name__ == "PlannerOutput":
         return """
 {
-  "final_output": [
+  "endpoint": "string (full URL endpoint to target)",
+  "payloads": [
     {
-      "entry_point": "string (URL)",
-      "page_url": "string (URL of the page with the form)",
-      "payload_sequence": [
-        {
-          "type": "string (e.g., boolean, union)",
-          "payloads": {
-            "field_name_1": "payload string",
-            "field_name_2": "payload string"
-          },
-          "reason": "string (rationale)"
-        }
-      ],
-      "justification": "string (brief summary)"
-    }
+      "field_name": "string (field to inject into)",
+      "payload": "string (injection string)",
+      "description": "string (what this tests)"
+    },
+    ... (5 total payloads)
   ]
 }
 """
-    elif schema_class.__name__ == "AttackerOutput":
+    
+    elif schema_class.__name__ == "CriticOutput":
         return """
 {
-  "final_output": [
-    {
-      "entry_point": "string (URL)",
-      "page_url": "string (URL of the page with the form)",
-      "payloads": {
-        "field_name": "payload string"
-      },
-      "response_excerpt": "string (excerpt of response)",
-      "notes": "string (observations)"
-    }
-  ]
+  "decision": "rescan|replan|success|failure",
+  "reasoning": "string (explanation of decision)",
+  "suggestions": "string (specific suggestions for next iteration)"
 }
 """
-    elif schema_class.__name__ == "ExploitEvaluatorOutput":
-        return """
-{
-  "should_terminate": boolean,
-  "reason": "string (reason for verdict)",
-  "successful_payload": null or {
-    "field_name_1": "payload string",
-    "field_name_2": "payload string"
-  }
-}
-"""
+
     elif schema_class.__name__ == "ScannerInputOutput":
         return """
 {
   "scanner_tool_inputs": {
-    "target_url": "string (the URL to scan)",
-    "endpoint": "string (the FULL ENDPOINT API URL to test),
-    "fields": {
-      ["list of endpoint parameters"]
-    }
+    "target_url": "string (the main URL to scan)",
+    "endpoint": "string (the FULL ENDPOINT API URL to test)",
+    "fields": ["list", "of", "field", "names"]
   }
 }
 """
     
+    elif schema_class.__name__ == "ExploitEvaluatorOutput":
+        return """
+{
+  "should_terminate": true/false,
+  "reason": "string (reason for verdict)",
+  "successful_payload": {
+    "field_name_1": "payload_1",
+    "field_name_2": "payload_2"
+  } OR null
+}
+"""
+    
+    # Fallback for other schemas
     hints = schema_class.__annotations__
     schema_desc = "{\n"
     for field_name, field_type in hints.items():
@@ -320,16 +277,19 @@ def safe_parse_json(content: str) -> dict:
     Safely parse JSON from model output, handling markdown code blocks.
     """
     content = content.strip()
+    
+    # Remove markdown code blocks
     if content.startswith("```"):
         lines = content.split("\n")
-        lines = lines[1:]
+        lines = lines[1:]  # Remove first ```json or ```
         if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
+            lines = lines[:-1]  # Remove last ```
         content = "\n".join(lines).strip()
     
     try:
         return json.loads(content)
     except json.JSONDecodeError:
+        # Try to extract JSON from the content
         start = content.find('{')
         end = content.rfind('}') + 1
         if start != -1 and end > start:
@@ -337,7 +297,13 @@ def safe_parse_json(content: str) -> dict:
         raise
 
 
-async def call_ollama_with_json(model_name: str, prompt: str, schema_class: type, max_retries: int = 3, print_output: bool = True) -> dict:
+async def call_ollama_with_json(
+    model_name: str, 
+    prompt: str, 
+    schema_class: type, 
+    max_retries: int = 3, 
+    print_output: bool = True
+) -> dict:
     """
     Call Ollama with JSON mode enabled and parse the response.
     Includes retry logic for malformed JSON and server errors.
@@ -345,14 +311,14 @@ async def call_ollama_with_json(model_name: str, prompt: str, schema_class: type
     Args:
         model_name: Name of the Ollama model to use
         prompt: The prompt to send to the model
-        schema_class: TypedDict class defining the expected output schema
+        schema_class: TypedDict class defining the expected output schema (or dict for free-form)
         max_retries: Maximum number of retry attempts
         print_output: Whether to pretty print the output (default: True)
     
     Returns:
         Parsed JSON dictionary matching the schema
     """
-    schema_name = schema_class.__name__
+    schema_name = schema_class.__name__ if hasattr(schema_class, '__name__') else 'dict'
     
     for attempt in range(max_retries):
         try:
@@ -363,7 +329,9 @@ async def call_ollama_with_json(model_name: str, prompt: str, schema_class: type
                 timeout=120,
                 verbose=False
             )
+            
             schema_desc = get_json_schema_prompt(schema_class)
+            
             enhanced_prompt = f"""{prompt}
 
 CRITICAL: You MUST respond with a valid JSON object that EXACTLY matches this structure:
@@ -382,15 +350,27 @@ Your response should start with {{ and end with }}"""
             response = await llm.ainvoke([HumanMessage(content=enhanced_prompt)])
             result = safe_parse_json(response.content)
             
+            # Validate result structure (skip validation for dict schema)
             if schema_name == "CriticOutput":
-                if "final_output" in result:
-                    if "analysis" not in result["final_output"] or "recommendation" not in result["final_output"]:
-                        raise ValueError(f"Invalid CriticOutput structure. Missing required fields in final_output.")
-                elif "analysis" in result and "recommendation" in result:
-                    result = {"final_output": result}
-                else:
+                required_fields = ["decision", "reasoning", "suggestions"]
+                if not all(field in result for field in required_fields):
                     raise ValueError(f"Invalid CriticOutput structure. Missing required fields.")
+                
+                valid_decisions = ["rescan", "replan", "success", "failure"]
+                if result["decision"] not in valid_decisions:
+                    raise ValueError(f"Invalid decision: {result['decision']}. Must be one of {valid_decisions}")
             
+            elif schema_name == "PlannerOutput":
+                if "endpoint" not in result or "payloads" not in result:
+                    raise ValueError(f"Invalid PlannerOutput structure. Missing required fields.")
+                if not isinstance(result["payloads"], list):
+                    raise ValueError(f"'payloads' must be a list")
+            
+            elif schema_name == "ScannerInputOutput":
+                if "scanner_tool_inputs" not in result:
+                    raise ValueError(f"Invalid ScannerInputOutput structure. Missing 'scanner_tool_inputs' field.")
+            
+            # Pretty print the output
             if print_output:
                 if schema_name == "PlannerOutput":
                     print_planner_output(result)
@@ -409,5 +389,8 @@ Your response should start with {{ and end with }}"""
             print(f'Error on attempt {attempt + 1}/{max_retries}: {e}')
             if attempt == max_retries - 1:
                 raise
+            # Wait a bit before retrying
+            import asyncio
+            await asyncio.sleep(1)
     
     raise ValueError(f"Failed to get valid JSON after {max_retries} attempts")
