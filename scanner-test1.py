@@ -86,7 +86,8 @@ Found Timing based NoSQL Injection:
         ]
 
         # get the current result and increment counter
-        result = res[0:self._state % len(res)]
+        result = res[0:self._state % len(res)+1]
+        result = '\n'.join(result)
         self._state += 1
         return result
 
@@ -250,6 +251,8 @@ Return the endpoint URL and 5 payloads.
     async def attacker_agent(state: FullPentestState):
         """Execute the planned payloads against the target."""
         planner_output = state["planner_output"]
+        print('PLANNER OUTPUT')
+        print(planner_output)
         endpoint = planner_output["endpoint"]
         payloads = planner_output["payloads"]
         
