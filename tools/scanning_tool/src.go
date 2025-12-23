@@ -25,6 +25,20 @@ import (
 	"github.com/montanaflynn/stats"
 )
 
+// ScanState tracks the progress of a scan to allow resuming
+type ScanState struct {
+	Stage           string   `json:"stage"`            // "error", "boolean", "timing", "complete"
+	SubStage        string   `json:"sub_stage"`        // for specific test within stage
+	CompletedStages []string `json:"completed_stages"` // stages that are done
+}
+
+// ScanResult contains both the injection found and the state for resuming
+type ScanResult struct {
+	Injection InjectionObject `json:"injection"`
+	State     ScanState       `json:"state"`
+	Complete  bool            `json:"complete"`
+}
+
 // data
 var MongoSpecialCharacters = []string{"'", "\"", "$", ".", ">", "[", "]"}
 var MongoSpecialKeyCharacters = []string{"[$]"}
@@ -1259,12 +1273,33 @@ func display(injectables []InjectionObject) string {
 }
 
 //export run
-func run(urlPtr *C.char, requestDataPtr *C.char) *C.char {
+func run(urlPtr *C.char, requestDataPtr *C.char, statePtr *C.char) *C.char {
 	target := C.GoString(urlPtr)
 	requestData := C.GoString(requestDataPtr)
 
-	var report strings.Builder
-	report.WriteString(fmt.Sprintf("URL: %s\n", target))
+	// Safely handle the state parameter - check for NULL pointer
+	var stateJSON string
+	if statePtr != nil {
+		stateJSON = C.GoString(statePtr)
+	} else {
+		stateJSON = ""
+	}
+
+	// Parse the state if provided
+	var state ScanState
+	if stateJSON != "" && stateJSON != "null" && stateJSON != "{}" {
+		err := json.Unmarshal([]byte(stateJSON), &state)
+		if err != nil {
+			return C.CString(fmt.Sprintf(`{"error": "Invalid state JSON: %v"}`, err))
+		}
+	} else {
+		// Initialize new scan
+		state = ScanState{
+			Stage:           "error",
+			SubStage:        "",
+			CompletedStages: []string{},
+		}
+	}
 
 	requireHTTPS := false
 	userAgent := "Mozilla/5.0 (compatible; NoSQLi-Scanner/1.0)"
@@ -1275,19 +1310,87 @@ func run(urlPtr *C.char, requestDataPtr *C.char) *C.char {
 	var scanOptions = ScanOptions{target, request, proxy, userAgent, requestData, requireHTTPS, allowInsecureCertificates}
 	attackObj, err := NewAttackObject(scanOptions)
 	if err != nil {
-		return C.CString(fmt.Sprintf("Error: %v\n", err))
+		return C.CString(fmt.Sprintf(`{"error": "%v"}`, err))
 	}
 
 	attackObj.Request.Method = "POST"
 
-	var injectables []InjectionObject
-	injectables = append(injectables, ErrorBasedInjectionTest(attackObj)...)
-	injectables = append(injectables, BlindBooleanInjectionTest(attackObj)...)
-	injectables = append(injectables, TimingInjectionTest(attackObj)...)
+	// Helper function to check if stage is completed
+	isStageComplete := func(stageName string) bool {
+		for _, s := range state.CompletedStages {
+			if s == stageName {
+				return true
+			}
+		}
+		return false
+	}
 
-	report.WriteString(display(injectables))
+	// Run error-based tests if not completed
+	if state.Stage == "error" && !isStageComplete("error") {
+		injectables := ErrorBasedInjectionTest(attackObj)
+		if len(injectables) > 0 {
+			// Found an injection, return it with state
+			state.CompletedStages = append(state.CompletedStages, "error")
+			state.Stage = "boolean"
+			result := ScanResult{
+				Injection: injectables[0],
+				State:     state,
+				Complete:  false,
+			}
+			resultJSON, _ := json.Marshal(result)
+			return C.CString(string(resultJSON))
+		}
+		state.CompletedStages = append(state.CompletedStages, "error")
+		state.Stage = "boolean"
+	}
 
-	return C.CString(report.String())
+	// Run boolean-based tests if not completed
+	if state.Stage == "boolean" && !isStageComplete("boolean") {
+		injectables := BlindBooleanInjectionTest(attackObj)
+		if len(injectables) > 0 {
+			// Found an injection, return it with state
+			state.CompletedStages = append(state.CompletedStages, "boolean")
+			state.Stage = "timing"
+			result := ScanResult{
+				Injection: injectables[0],
+				State:     state,
+				Complete:  false,
+			}
+			resultJSON, _ := json.Marshal(result)
+			return C.CString(string(resultJSON))
+		}
+		state.CompletedStages = append(state.CompletedStages, "boolean")
+		state.Stage = "timing"
+	}
+
+	// Run timing-based tests if not completed
+	if state.Stage == "timing" && !isStageComplete("timing") {
+		injectables := TimingInjectionTest(attackObj)
+		if len(injectables) > 0 {
+			// Found an injection, return it with state
+			state.CompletedStages = append(state.CompletedStages, "timing")
+			state.Stage = "complete"
+			result := ScanResult{
+				Injection: injectables[0],
+				State:     state,
+				Complete:  false,
+			}
+			resultJSON, _ := json.Marshal(result)
+			return C.CString(string(resultJSON))
+		}
+		state.CompletedStages = append(state.CompletedStages, "timing")
+		state.Stage = "complete"
+	}
+
+	// All stages complete, no more injections found
+	state.Stage = "complete"
+	result := ScanResult{
+		Injection: InjectionObject{},
+		State:     state,
+		Complete:  true,
+	}
+	resultJSON, _ := json.Marshal(result)
+	return C.CString(string(resultJSON))
 }
 
 func main() {}

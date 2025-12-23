@@ -47,17 +47,16 @@ if len(sys.argv) < 3:
     sys.exit(1)
 
 
+class ScannerStructurerState(TypedDict):
+    url: str
+    goal: str
+    website_scrape: str
+    messages: List[Any]
+    scanner_tool_inputs: Optional[Any]
+
+
 async def run_scanner_tool(scanner_inputs: dict) -> str:
-    """
-    Run the NoSQL scanner tool OUTSIDE the agentic framework.
-    This function executes the actual scanner with the provided inputs.
-    
-    Args:
-        scanner_inputs: Dictionary containing tool parameters from the agent
-        
-    Returns:
-        The scanner report as a string
-    """
+
     from tools.scanning_tool.nosql_scanner import ScanForNoSQLITool
     
     print(f"\n{'='*80}")
@@ -66,12 +65,13 @@ async def run_scanner_tool(scanner_inputs: dict) -> str:
     print(f"Scanner Inputs: {json.dumps(scanner_inputs, indent=2)}")
     print(f"{'='*80}\n")
     
-    # Initialize the scanner tool
     scanner_tool = ScanForNoSQLITool()
+    endpoint = scanner_inputs['endpoint']
+    fields = scanner_inputs['fields']
+
     
-    # Run the scanner with the provided inputs
-    # This may take some time, which is why we run it outside the agent
-    scan_report = await scanner_tool.arun(scanner_inputs)
+
+    scan_report = await scanner_tool.arun(endpoint, fields)
     
     print(f"\n{'='*80}")
     print("SCANNER TOOL EXECUTION COMPLETE")
@@ -84,64 +84,6 @@ async def run_scanner_tool(scanner_inputs: dict) -> str:
 async def main():
     MODEL = sys.argv[2]
 
-    # ============================================================================
-    # PHASE 1: SCANNER INPUT GENERATION
-    # ============================================================================
-    async def scanner_input_generator(state: PentestState):
-        """
-        Agent that generates the INPUTS for the NoSQL scanner tool,
-        but does NOT execute the tool itself.
-        """
-        scanner_input_agent = create_react_agent(
-            model=ChatOllama(model=MODEL, temperature=0),
-            prompt=scanner_input_generator_prompt,
-            name="scanner_input_generator",
-            tools=await scanner_input_tools(),  # Tools that help explore, but no actual scanner
-            state_schema=PentestState,
-            debug=True,
-        )
-        
-        resp = await scanner_input_agent.ainvoke(state)
-        
-        # The agent's final output should describe what inputs to pass to the scanner
-        raw_output = resp["messages"][-1].content
-        
-        print(f"\n{'='*80}")
-        print("SCANNER INPUT GENERATOR OUTPUT")
-        print(f"{'='*80}")
-        print(f"Output: {raw_output[:500]}...")
-        print(f"{'='*80}\n")
-        
-        return {
-            "messages": [resp["messages"][-1]],
-            "raw_scanner_input": raw_output,
-        }
-    
-    async def scanner_input_structurer(state: PentestState):
-        """Structure scanner input generator output using Ollama JSON mode."""
-        content = state["raw_scanner_input"]
-        
-        try:
-            result = await call_ollama_with_json(MODEL, content, ScannerInputOutput)
-            
-            # Extract the structured scanner inputs
-            scanner_inputs = result.get("scanner_tool_inputs", {})
-            
-            return {
-                "scanner_tool_inputs": scanner_inputs,
-                "raw_scanner_input": None,
-            }
-        except Exception as e:
-            print(f"\n=== ERROR IN SCANNER_INPUT_STRUCTURER ===")
-            print(f"Error: {e}")
-            print(f"Raw content length: {len(content)}")
-            print(f"Raw content preview: {content[:500]}...")
-            print(f"==========================================\n")
-            raise
-
-    # ============================================================================
-    # PHASE 2: PENTEST AGENTS (NO SCANNER)
-    # ============================================================================
     async def planner(state: PentestState):
         """Planner agent returns raw natural language output."""
         planner_agent = create_react_agent(
@@ -367,18 +309,6 @@ NOTE: Do NOT terminate to request re-scanning. The scanner has already run and c
         else:
             return "critic_agent"
 
-    # ============================================================================
-    # PHASE 1 GRAPH: SCANNER INPUT GENERATION
-    # ============================================================================
-    scanner_input_graph = StateGraph(PentestState)
-    scanner_input_graph.add_node("scanner_input_generator", scanner_input_generator)
-    scanner_input_graph.add_node("scanner_input_structurer", scanner_input_structurer)
-    
-    scanner_input_graph.add_edge(START, "scanner_input_generator")
-    scanner_input_graph.add_edge("scanner_input_generator", "scanner_input_structurer")
-    scanner_input_graph.add_edge("scanner_input_structurer", END)
-    
-    scanner_input_workflow = scanner_input_graph.compile()
 
     # ============================================================================
     # PHASE 2 GRAPH: PENTEST LOOP (NO SCANNER)
@@ -404,7 +334,6 @@ NOTE: Do NOT terminate to request re-scanning. The scanner has already run and c
         {"end": END, "critic_agent": "critic_agent"},
     )
     pentest_subgraph.add_edge("critic_agent", "critic_structurer")
-    # Critic goes back to planner, NOT scanner
     pentest_subgraph.add_edge("critic_structurer", "planner_agent")
     
     pentest_agents = pentest_subgraph.compile(name="pentest_agents")
@@ -433,34 +362,54 @@ NOTE: Do NOT terminate to request re-scanning. The scanner has already run and c
     print(f"{'='*80}\n")
 
     
-    scanner_input_state = await scanner_input_workflow.ainvoke(
+    async def scanner_input_structurer(state: ScannerStructurerState):
+        """
+        Structure scanner inputs directly from website scrape.
+        """
+
+        prompt = f"""
+{scanner_input_generator_prompt}
+
+=== TARGET URL ===
+{state['url']}
+
+=== GOAL ===
+{state['goal']}
+
+=== INITIAL WEBSITE SCRAPE (RAW) ===
+{state['website_scrape']}
+"""
+
+        result = await call_ollama_with_json(
+            MODEL,
+            prompt,
+            ScannerInputOutput,
+        )
+
+        return {
+            "scanner_tool_inputs": result["scanner_tool_inputs"]
+        }
+
+    graph = StateGraph(ScannerStructurerState)
+    graph.add_node("scanner_input_structurer", scanner_input_structurer)
+
+    graph.add_edge(START, "scanner_input_structurer")
+    graph.add_edge("scanner_input_structurer", END)
+
+    workflow = graph.compile()
+
+    state = await workflow.ainvoke(
         {
-            "messages": [HumanMessage(content=f"Target URL: {url}\nGoal: {goal}")],
-            "tries": 0,
-            "should_terminate": False,
-            "reason": "",
+            "messages": [
+                HumanMessage(content="Generate structured scanner inputs from website scrape")
+            ],
             "url": url,
-            "attempts": [],
-            "recommendation": {},
-            "successful_payload": None,
-            "payloads": [],
-            "structured_response": None,
-            "raw_attacker_output": None,
-            "raw_planner_output": None,
-            "raw_critic_output": None,
-            "raw_scanner_input": None,
+            "goal": goal,
+            "website_scrape": website_scrape,
             "scanner_tool_inputs": None,
-            "initial_scan_report": None,
-            "goal": goal
-        },
-        {"recursion_limit": 50},
+        }
     )
-    
-    scanner_inputs = scanner_input_state.get("scanner_tool_inputs", {})
-    
-    if not scanner_inputs:
-        print("ERROR: Scanner input generator did not produce valid inputs")
-        sys.exit(1)
+    scanner_inputs = state["scanner_tool_inputs"]
     
 
     

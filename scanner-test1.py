@@ -27,33 +27,6 @@ if len(sys.argv) < 2:
 
 MODEL = "gpt-oss:20b"
 
-async def run_scanner_tool(scanner_inputs: dict) -> str:
-
-    from tools.scanning_tool.nosql_scanner import ScanForNoSQLITool
-    
-    print(f"\n{'='*80}")
-    print("EXECUTING NOSQL SCANNER TOOL (OUTSIDE AGENT FRAMEWORK)")
-    print(f"{'='*80}")
-    print(f"Scanner Inputs: {json.dumps(scanner_inputs, indent=2)}")
-    print(f"{'='*80}\n")
-    
-    scanner_tool = ScanForNoSQLITool()
-    endpoint = scanner_inputs['endpoint']
-    fields = scanner_inputs['fields']
-
-    
-
-    scan_report = await scanner_tool.arun(endpoint, fields)
-    
-    print(f"\n{'='*80}")
-    print("SCANNER TOOL EXECUTION COMPLETE")
-    print(f"Report length: {len(scan_report)} characters")
-    print(f"{'='*80}\n")
-    
-    return scan_report
-
-
-
 def fetch_initial_scrape(url: str) -> str:
     """
     Fetch initial unauthenticated website scrape.
@@ -129,16 +102,7 @@ async def main():
     )
 
     print("\n=== STRUCTURED SCANNER INPUTS ===")
-    scanner_inputs = state["scanner_tool_inputs"]
-    print(json.dumps(scanner_inputs, indent=2))
-
-    res = run_scanner_tool(scanner_inputs)
-    print("\n=== NOSQLI SCANNER OUTPUT===")
-    print(res)
-
-    
-
-
+    print(json.dumps(state["scanner_tool_inputs"], indent=2))
 
 
 if __name__ == "__main__":
