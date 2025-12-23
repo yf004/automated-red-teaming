@@ -91,8 +91,8 @@ def print_planner_output(data: dict) -> None:
     
     for idx, payload in enumerate(payloads, 1):
         print(f"  [Payload #{idx}]")
-        print(f"    Field: {payload.get('field_name', 'N/A')}")
-        print(f"    Payload: {payload.get('payload', 'N/A')}")
+        print(f"    Fields: {payload.get('field_names', 'N/A')}")
+        print(f"    Payloads: {payload.get('payloads', 'N/A')}")
         print(f"    Description: {payload.get('description', 'N/A')}")
         print()
     
