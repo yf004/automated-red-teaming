@@ -36,7 +36,8 @@ class ScanForNoSQLITool(BaseTool):
             
             output = library.run(
                 url.encode("utf-8"),
-                request.encode("utf-8")
+                request.encode("utf-8"),
+                None
             )
             
             report = ctypes.string_at(output).decode("utf-8")
