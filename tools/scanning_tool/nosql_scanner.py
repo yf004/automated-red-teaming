@@ -4,6 +4,12 @@ from pydantic import BaseModel, Field
 import ctypes
 import json
 import asyncio
+import os
+
+LIB_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "library.so"
+)
 
 
 class ScanForNoSQLIInput(BaseModel):
@@ -21,7 +27,7 @@ class ScanForNoSQLITool(BaseTool):
             if isinstance(fields, str):
                 fields = [fields]
             
-            library = ctypes.CDLL("./library.so")
+            library = ctypes.CDLL(LIB_PATH)
             library.run.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
             library.run.restype = ctypes.c_void_p
             

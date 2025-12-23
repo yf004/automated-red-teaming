@@ -9,6 +9,8 @@ from langchain_core.messages import HumanMessage
 from agents.prompts import scanner_input_generator_prompt
 from agents.outputs import ScannerInputOutput, call_ollama_with_json
 from typing import TypedDict, Optional, Any, List
+from tools.scanning_tool.nosql_scanner import ScanForNoSQLITool, ScanForNoSQLIInput
+    
 
 class ScannerStructurerState(TypedDict):
     url: str
@@ -26,33 +28,6 @@ if len(sys.argv) < 2:
     sys.exit(1)
 
 MODEL = "gpt-oss:20b"
-
-async def run_scanner_tool(scanner_inputs: dict) -> str:
-
-    from tools.scanning_tool.nosql_scanner import ScanForNoSQLITool
-    
-    print(f"\n{'='*80}")
-    print("EXECUTING NOSQL SCANNER TOOL (OUTSIDE AGENT FRAMEWORK)")
-    print(f"{'='*80}")
-    print(f"Scanner Inputs: {json.dumps(scanner_inputs, indent=2)}")
-    print(f"{'='*80}\n")
-    
-    scanner_tool = ScanForNoSQLITool()
-    endpoint = scanner_inputs['endpoint']
-    fields = scanner_inputs['fields']
-
-    
-
-    scan_report = await scanner_tool.arun(endpoint, fields)
-    
-    print(f"\n{'='*80}")
-    print("SCANNER TOOL EXECUTION COMPLETE")
-    print(f"Report length: {len(scan_report)} characters")
-    print(f"{'='*80}\n")
-    
-    return scan_report
-
-
 
 def fetch_initial_scrape(url: str) -> str:
     """
@@ -132,7 +107,12 @@ async def main():
     scanner_inputs = state["scanner_tool_inputs"]
     print(json.dumps(scanner_inputs, indent=2))
 
-    res = run_scanner_tool(scanner_inputs)
+    scanner_tool = ScanForNoSQLITool()
+    res = await scanner_tool.arun({
+        "url": scanner_inputs["endpoint"],
+        "fields": scanner_inputs["fields"],
+    })
+    
     print("\n=== NOSQLI SCANNER OUTPUT===")
     print(res)
 

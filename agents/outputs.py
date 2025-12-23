@@ -292,7 +292,7 @@ def get_json_schema_prompt(schema_class: type) -> str:
 {
   "scanner_tool_inputs": {
     "target_url": "string (the URL to scan)",
-    "endpoint": "string (the ENDPOINT API URL to test),
+    "endpoint": "string (the FULL ENDPOINT API URL to test),
     "fields": {
       ["list of endpoint parameters"]
     }

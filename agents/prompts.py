@@ -60,10 +60,10 @@ Target URL:
 - {url}
 
 Primary endpoint selected for scanning:
-- <endpoint> (<HTTP method>, reason for selection)
+- <FULL endpoint URL> (<HTTP method>, reason for selection)
 
 Forms identified:
-- <form action URL> (<method>)
+- <FULL form action URL> (<method>)
 
 Fields identified:
 - <field1>
