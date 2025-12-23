@@ -216,7 +216,7 @@ def get_json_schema_prompt(schema_class: type) -> str:
   "payloads": [
     {
       "field_names": [list of fields to inject into],
-      "payloads": [list of injection strings (order with respect to field_names)],
+      "payloads": [list of injection payloads, string or json (order with respect to field_names)],
       "description": "string (what this tries)"
     },
     ... (5 total payloads)
