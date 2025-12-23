@@ -215,9 +215,9 @@ def get_json_schema_prompt(schema_class: type) -> str:
   "endpoint": "string (full URL endpoint to target)",
   "payloads": [
     {
-      "field_name": "string (field to inject into)",
-      "payload": "string (injection string)",
-      "description": "string (what this tests)"
+      "field_names": [list of fields to inject into],
+      "payloads": [list of injection strings (order with respect to field_names)],
+      "description": "string (what this tries)"
     },
     ... (5 total payloads)
   ]

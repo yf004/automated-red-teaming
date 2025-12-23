@@ -86,7 +86,7 @@ Found Timing based NoSQL Injection:
         ]
 
         # get the current result and increment counter
-        result = res[self._state % len(res)]
+        result = res[0:self._state % len(res)]
         self._state += 1
         return result
 
@@ -186,7 +186,7 @@ Return the scanner tool inputs with:
             ScannerInputOutput,
         )
         return {"scanner_tool_inputs": result["scanner_tool_inputs"],
-                "entry_point": result["scanner_tool_inputs"]['entry_point'],
+                "entry_point": result["scanner_tool_inputs"]['endpoint'],
                 "fields": result["scanner_tool_inputs"]['fields']}
 
     async def manual_scanner(state: FullPentestState):
@@ -194,7 +194,7 @@ Return the scanner tool inputs with:
         
         
         res = await scanner_tool.arun({
-            "url": state["endpoint"],
+            "url": state["entry_point"],
             "fields": state["fields"],
         })
         
@@ -224,7 +224,7 @@ You are a Penetration Testing Planner Agent creating NoSQL injection payloads.
 Based on the manual scan findings, generate 5 specific NoSQL injection payloads to test.
 Each payload should be ready to send in a POST request body.
 
-Target different NoSQL injection techniques:
+Target different NoSQL injection techniques as you see fit:
 1. Blind boolean-based injection
 2. Timing-based injection
 3. Authentication bypass
@@ -261,7 +261,9 @@ Return the endpoint URL and 5 payloads.
             
             try:
                 # Construct POST request body
-                post_data = {payload_obj["field_name"]: payload_obj["payload"]}
+                field_names = payload_obj["field_names"]
+                payloads = payload_obj["payloads"]
+                post_data = dict(zip(field_names, payloads))
                 
                 # Execute the request
                 print('\ntrying...')
