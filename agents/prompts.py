@@ -109,10 +109,12 @@ Generate 5 different payloads that:
 3. Payloads should be practical and ready to send in POST request bodies
 
 [STRATEGY CONSIDERATIONS]
-- Prioritize payloads most likely to succeed based on scan results
-- Include both simple and complex injection attempts
-- Consider different NoSQL databases (MongoDB, CouchDB, etc.)
-- Test both authentication bypass and data extraction techniques
+  - Do NOT test for types of injections. This has been done and everything you need is the in the initial scan report.
+  - Refer to the goal and ensure that every single payload is made to achieve the goal.
+  - Do NOT use other techniques other than NoSQL injection and the vulnerabilities found in the scanner. SQL injection and bruteforcing the password is NOT allowed.
+  - Remember that you can use comments to invalidate the back part of the query.
+  - For each payload entry, ensure you include a `"payloads"` object mapping **every** input field name to its payload value.
+
 
 [OUTPUT FORMAT]
 Return a JSON object with this exact structure:

