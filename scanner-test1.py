@@ -6,17 +6,8 @@ import nest_asyncio
 import requests
 from langgraph.graph import START, END, StateGraph
 from langchain_core.messages import HumanMessage
-from agents.prompts import (
-    scanner_input_generator_prompt,
-    planner_agent_prompt,
-    attacker_agent_prompt,
-    critic_agent_prompt,
-    exploit_evaluator_agent_prompt,
-    report_writer_agent_prompt,
-)
+
 from agents.outputs import (
-    ExploitEvaluatorOutput,
-    AttackerOutput,
     PlannerOutput,
     CriticOutput,
     ScannerInputOutput,
@@ -25,7 +16,6 @@ from agents.outputs import (
 from typing import TypedDict, Optional, Any, List, Union, Type
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
-
 nest_asyncio.apply()
 warnings.filterwarnings("ignore", category=ResourceWarning)
 
@@ -356,7 +346,6 @@ Provide your decision, clear reasoning, and specific suggestions for improvement
         }
 
     async def report_writer_agent(state: FullPentestState):
-        """Generate final penetration test report."""
         
         prompt = f"""
 You are a Penetration Test Report Writer creating a comprehensive security assessment report.
@@ -376,44 +365,30 @@ You are a Penetration Test Report Writer creating a comprehensive security asses
 === ATTACK RESULTS ===
 {json.dumps(state['attack_results'], indent=2)}
 
-Generate a professional penetration test report with these sections:
+[ROLE & BACKGROUND]
 
-1. EXECUTIVE SUMMARY
-   - Brief overview of assessment
-   - Key findings
-   - Overall risk rating
+You are the **Report Writer Agent**, a concise technical writer specializing in pentest documentation. Your goal is to transform the raw exploit attempts and final success into a clear, professional markdown report.
 
-2. ASSESSMENT SCOPE
-   - Target URL and testing goal
-   - Methodology used
-   - Limitations
+[TASK OBJECTIVE]
 
-3. VULNERABILITIES DISCOVERED
-   - Title and severity for each vulnerability
-   - Affected endpoints
-   - Technical details
-   - Proof of concept
+Using the attempt history and the confirmed successful payload, produce a concise yet insightful report that includes:
 
-4. EXPLOITATION DETAILS
-   - Payloads tested
-   - Successful attack vectors
-   - Evidence from responses
+1. **Executive Summary**
+    - One-paragraph overview of objectives and outcome.
+2. **Methodology**
+    - Briefly describe each phase (Scanning → Planning → Attacking → Evaluation → Critique).
+3. **Key Findings**
+    - Bullet-list of tested entry points, observed failure modes, and the one that succeeded.
+4. **Successful Exploit Details**
+    - Show the final payload mapped to each field, explain why it worked.
+5. **Security Implications & Recommendations**
+    - Outline the vulnerability's impact and suggest remediation steps.
+6. **Lessons Learned & Next Steps**
+    - Note any patterns (e.g., WAF quirks, filtering) and propose further testing or defensive measures.
 
-5. IMPACT ANALYSIS
-   - Confidentiality, Integrity, Availability impact
-   - Business risk assessment
-
-6. REMEDIATION RECOMMENDATIONS
-   - Specific fix instructions
-   - Priority levels
-   - Code examples where applicable
-
-7. CONCLUSION
-   - Summary of findings
-   - Overall security posture
-   - Next steps
-
-Return a structured report in JSON format with all sections.
+[OUTPUT FORMAT]
+**Markdown Document**: Generate markdown with appropriately leveled headings (`#`, `##`, ), code blocks for payload examples, and tables or lists where helpful.
+No Additional text.
 """
         
         # For report, we can use dict as schema to allow free-form structure

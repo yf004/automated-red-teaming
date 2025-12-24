@@ -11,38 +11,14 @@ nest_asyncio.apply()
 warnings.filterwarnings("ignore", category=ResourceWarning)
 
 
-class ExploitEvaluatorOutput(TypedDict):
-    should_terminate: bool = Field(
-        description="True if the pentest loop should terminate"
-    )
-    reason: str = Field(description="Reason for verdict")
-    successful_payload: Union[None, dict[str, str]] = Field(
-        description="""
-If the loop should terminate and the exploit was successful, this will contain the payload that were successful for each field.
-It should look like this:
-"payloads": {
-    "<field_name_1>": "<payload for field 1>",
-    "<field_name_2>": "<payload for field 2>",
-    …           : …
-}
-Else, this field should be empty/null.
-Return ONLY valid JSON.
-NO explanations. NO markdown. NO pre-text or post-text.
-"""
-    )
-
-
-class AttackerOutput(TypedDict):
-    final_output: list[dict[str, Union[str, dict]]]
-
 
 class PlannerOutput(TypedDict):
     endpoint: str = Field(description="The full URL endpoint to target")
     payloads: list[dict[str, str]] = Field(
         description="""
 List of 5 payloads to test. Each payload should have:
-- field_name: Which field to inject into
-- payload: The actual injection string
+- field_names: list of fields to inject into
+- payloads: list of string/json payloads to use (order with respect to field_names)
 - description: What this tests
 """
     )
