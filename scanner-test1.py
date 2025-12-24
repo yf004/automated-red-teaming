@@ -257,12 +257,19 @@ Return the endpoint URL and 5 payloads.
             print(f"\n[*] Testing payload {i+1}/{len(payloads)}: {payload_obj['description']}")
             
             try:
-                # Construct POST request body
                 field_names = payload_obj["field_names"]
                 payloads = payload_obj["payloads"]
-                post_data = dict(zip(field_names, payloads))
+
+                parsed_payloads = []
+                for item in lst:
+                    try:
+                        parsed = json.loads(item)
+                        parsed_payloads.append(parsed)
+                    except (json.JSONDecodeError, TypeError):
+                        parsed_payloads.append(item)
+
+                post_data = dict(zip(field_names, parsed_payloads))
                 
-                # Execute the request
                 print('\ntrying...')
                 print(f"endpoint: {endpoint}")
                 print(f"post_data: {post_data}")
