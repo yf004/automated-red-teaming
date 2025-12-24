@@ -4,13 +4,10 @@ import json
 import warnings
 import nest_asyncio
 from langchain_ollama.chat_models import ChatOllama
-from langchain_core.messages import HumanMessage, AIMessage
-
+from langchain_core.messages import HumanMessage
 
 nest_asyncio.apply()
 warnings.filterwarnings("ignore", category=ResourceWarning)
-
-
 
 class PlannerOutput(TypedDict):
     endpoint: str = Field(description="The full URL endpoint to target")
@@ -22,7 +19,6 @@ List of 5 payloads to test. Each payload should have:
 - description: What this tests
 """
     )
-
 
 class CriticOutput(TypedDict):
     decision: str = Field(
@@ -52,9 +48,6 @@ This should contain all necessary parameters:
 
 
 def print_planner_output(data: dict) -> None:
-    """
-    Pretty print Planner Agent output.
-    """
     print("\n" + "="*80)
     print("PLANNER AGENT OUTPUT")
     print("="*80)
@@ -76,9 +69,7 @@ def print_planner_output(data: dict) -> None:
 
 
 def print_critic_output(data: dict) -> None:
-    """
-    Pretty print Critic Agent output.
-    """
+
     print("\n" + "="*80)
     print("CRITIC AGENT OUTPUT")
     print("="*80)
@@ -97,9 +88,6 @@ def print_critic_output(data: dict) -> None:
 
 
 def print_attacker_output(data: dict) -> None:
-    """
-    Pretty print Attacker Agent output.
-    """
     print("\n" + "="*80)
     print("ATTACKER AGENT OUTPUT")
     print("="*80)
@@ -129,9 +117,6 @@ def print_attacker_output(data: dict) -> None:
 
 
 def print_evaluator_output(data: dict) -> None:
-    """
-    Pretty print Exploit Evaluator output.
-    """
     print("\n" + "="*80)
     print("EXPLOIT EVALUATOR OUTPUT")
     print("="*80)
@@ -154,9 +139,6 @@ def print_evaluator_output(data: dict) -> None:
 
 
 def print_scanner_input_output(data: dict) -> None:
-    """
-    Pretty print Scanner Input Generator output.
-    """
     print("\n" + "="*80)
     print("SCANNER INPUT GENERATOR OUTPUT")
     print("="*80)
@@ -174,10 +156,6 @@ def print_scanner_input_output(data: dict) -> None:
 
     
 def get_json_schema_prompt(schema_class: type) -> str:
-    """
-    Generate a JSON schema prompt from a Pydantic TypedDict class.
-    """
-    # Handle dict type for free-form schemas (like reports)
     if schema_class == dict:
         return """
 {
@@ -220,19 +198,7 @@ def get_json_schema_prompt(schema_class: type) -> str:
 }
 """
     
-    elif schema_class.__name__ == "ExploitEvaluatorOutput":
-        return """
-{
-  "should_terminate": true/false,
-  "reason": "string (reason for verdict)",
-  "successful_payload": {
-    "field_name_1": "payload_1",
-    "field_name_2": "payload_2"
-  } OR null
-}
-"""
     
-    # Fallback for other schemas
     hints = schema_class.__annotations__
     schema_desc = "{\n"
     for field_name, field_type in hints.items():
@@ -249,23 +215,18 @@ def get_json_schema_prompt(schema_class: type) -> str:
 
 
 def safe_parse_json(content: str) -> dict:
-    """
-    Safely parse JSON from model output, handling markdown code blocks.
-    """
     content = content.strip()
     
-    # Remove markdown code blocks
     if content.startswith("```"):
         lines = content.split("\n")
-        lines = lines[1:]  # Remove first ```json or ```
+        lines = lines[1:]  
         if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]  # Remove last ```
+            lines = lines[:-1]
         content = "\n".join(lines).strip()
     
     try:
         return json.loads(content)
     except json.JSONDecodeError:
-        # Try to extract JSON from the content
         start = content.find('{')
         end = content.rfind('}') + 1
         if start != -1 and end > start:
@@ -280,20 +241,7 @@ async def call_ollama_with_json(
     max_retries: int = 3, 
     print_output: bool = True
 ) -> dict:
-    """
-    Call Ollama with JSON mode enabled and parse the response.
-    Includes retry logic for malformed JSON and server errors.
-    
-    Args:
-        model_name: Name of the Ollama model to use
-        prompt: The prompt to send to the model
-        schema_class: TypedDict class defining the expected output schema (or dict for free-form)
-        max_retries: Maximum number of retry attempts
-        print_output: Whether to pretty print the output (default: True)
-    
-    Returns:
-        Parsed JSON dictionary matching the schema
-    """
+
     schema_name = schema_class.__name__ if hasattr(schema_class, '__name__') else 'dict'
     
     for attempt in range(max_retries):
@@ -326,7 +274,6 @@ Your response should start with {{ and end with }}"""
             response = await llm.ainvoke([HumanMessage(content=enhanced_prompt)])
             result = safe_parse_json(response.content)
             
-            # Validate result structure (skip validation for dict schema)
             if schema_name == "CriticOutput":
                 required_fields = ["decision", "reasoning", "suggestions"]
                 if not all(field in result for field in required_fields):
@@ -346,16 +293,11 @@ Your response should start with {{ and end with }}"""
                 if "scanner_tool_inputs" not in result:
                     raise ValueError(f"Invalid ScannerInputOutput structure. Missing 'scanner_tool_inputs' field.")
             
-            # Pretty print the output
             if print_output:
                 if schema_name == "PlannerOutput":
                     print_planner_output(result)
                 elif schema_name == "CriticOutput":
                     print_critic_output(result)
-                elif schema_name == "AttackerOutput":
-                    print_attacker_output(result)
-                elif schema_name == "ExploitEvaluatorOutput":
-                    print_evaluator_output(result)
                 elif schema_name == "ScannerInputOutput":
                     print_scanner_input_output(result)
             
@@ -365,7 +307,7 @@ Your response should start with {{ and end with }}"""
             print(f'Error on attempt {attempt + 1}/{max_retries}: {e}')
             if attempt == max_retries - 1:
                 raise
-            # Wait a bit before retrying
+
             import asyncio
             await asyncio.sleep(1)
     

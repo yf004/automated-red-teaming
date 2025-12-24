@@ -16,6 +16,7 @@ from agents.outputs import (
 from typing import TypedDict, Optional, Any, List, Union, Type
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
+import time
 nest_asyncio.apply()
 warnings.filterwarnings("ignore", category=ResourceWarning)
 
@@ -113,6 +114,9 @@ def fetch_initial_scrape(url: str) -> str:
 
 
 async def main():
+    start_time = time.perf_counter()
+
+
     scanner_tool = ScanForNoSQLITool()
 
     url = sys.argv[1]
@@ -480,6 +484,13 @@ No Additional text.
     if final_state.get("final_report"):
         print("\n=== FINAL REPORT ===")
         print(final_state["final_report"])
+
+    end_time = time.perf_counter()
+
+    elapsed_time = end_time - start_time
+    print("\n=== TIME TAKEN ===")
+    print(f"{elapsed_time:.4f} seconds")
+
 
 
 if __name__ == "__main__":
