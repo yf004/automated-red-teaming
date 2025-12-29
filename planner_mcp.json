@@ -1,0 +1,13 @@
+{
+  "servers": [
+    {
+      "name": "Sequential Thinking",
+      "key": "sequential-thinking",
+      "params": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+        "env": {}
+      }
+    }
+  ]
+}

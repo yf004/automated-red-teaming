@@ -1,0 +1,712 @@
+"""Tool that calls Selenium."""
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import StaleElementReferenceException, WebDriverException
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+
+import json
+import re
+import time
+import urllib.parse
+import requests
+from typing import Any, Dict, List, Optional, Union
+
+import validators
+from bs4 import BeautifulSoup
+from pydantic import BaseModel, Field
+
+from tools.selenium.logging_actionchains import LoggingActionChains
+from tools.selenium.logging_webdriver import LoggingWebDriver
+from tools.selenium.selenium_code_generator import (
+    generate_selenium_code,
+    wipe_selenium_code,
+)
+from tools.selenium.logging_webdriver import (
+    clear_selenium_commands_log,
+)
+
+from tools.selenium.utils import (
+    find_parent_element_text,
+    get_all_text_elements,
+    prettify_text,
+    truncate_string_from_last_occurrence,
+)
+
+
+class SeleniumWrapper:
+    """Wrapper around Selenium.
+
+    To use, you should have the ``selenium`` python package installed.
+
+    Example:
+        .. code-block:: python
+
+            from langchain import SeleniumWrapper
+            selenium = SeleniumWrapper()
+    """
+
+    def __init__(self, headless: bool = False) -> None:
+        """Initialize Selenium and start interactive session."""
+        chrome_options = Options()
+
+        chrome_options.binary_location = "/usr/bin/chromium"
+        service = Service("/usr/bin/chromedriver")
+
+        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+
+
+        clear_selenium_commands_log()
+
+        self.driver = LoggingWebDriver(options=chrome_options, service=service)
+        self.driver.implicitly_wait(10)  # Wait 5 seconds for elements to load
+        self.session = requests.Session()  # For making HTTP requests
+
+    def __del__(self) -> None:
+        """Close Selenium session."""
+        # output driver_logs to selenium_commands.log file
+
+        self.driver.close()
+        self.session.close()
+        wipe_selenium_code()
+        generate_selenium_code("selenium_commands.log", "selenium_code.py")
+
+    def make_post_request(self, url: str, data: Optional[Dict[str, Any]] = None, 
+                         json_data: Optional[Dict[str, Any]] = None, 
+                         headers: Optional[Dict[str, str]] = None,
+                         cookies: Optional[Dict[str, str]] = None,
+                         include_session_cookies: bool = True) -> str:
+        """
+        Make a POST request to a URL with optional data, JSON, headers, and cookies.
+        
+        Args:
+            url: The URL to send the POST request to
+            data: Form data to send (for application/x-www-form-urlencoded)
+            json_data: JSON data to send (for application/json)
+            headers: Additional headers to include in the request
+            cookies: Additional cookies to include in the request
+            include_session_cookies: Whether to include cookies from the current browser session
+            
+        Returns:
+            String containing the response status code and text/content
+        """
+        # Validate URL
+        if not validators.url(url):
+            return f"Invalid URL: {url}. Please provide a valid URL starting with http:// or https://"
+        
+        # Prepare request headers
+        request_headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        if headers:
+            request_headers.update(headers)
+        
+        # Prepare cookies
+        request_cookies = {}
+        
+        if include_session_cookies:
+            # Get cookies from the current browser session
+            selenium_cookies = self.driver.get_cookies()
+            for cookie in selenium_cookies:
+                request_cookies[cookie['name']] = cookie['value']
+        
+        if cookies:
+            request_cookies.update(cookies)
+        
+        # Make the POST request
+        try:
+            if json_data:
+                # Send as JSON
+                response = self.session.post(
+                    url, 
+                    json=json_data, 
+                    headers=request_headers,
+                    cookies=request_cookies if request_cookies else None,
+                    timeout=30
+                )
+            elif data:
+                # Send as form data
+                response = self.session.post(
+                    url, 
+                    data=data, 
+                    headers=request_headers,
+                    cookies=request_cookies if request_cookies else None,
+                    timeout=30
+                )
+            else:
+                # Send empty POST request
+                response = self.session.post(
+                    url, 
+                    headers=request_headers,
+                    cookies=request_cookies if request_cookies else None,
+                    timeout=30
+                )
+            
+            # Format the response
+            result = f"POST Request to: {url}\n"
+            result += f"Status Code: {response.status_code}\n"
+            
+            if response.headers.get('Content-Type', '').startswith('application/json'):
+                try:
+                    json_response = response.json()
+                    result += f"JSON Response: {json.dumps(json_response, indent=2)}\n"
+                except ValueError:
+                    result += f"Response Text: {response.text[:2000]}...\n" if len(response.text) > 2000 else f"Response Text: {response.text}\n"
+            else:
+                result += f"Response Text: {response.text[:2000]}...\n" if len(response.text) > 2000 else f"Response Text: {response.text}\n"
+            
+            # Update browser cookies if needed
+            if include_session_cookies:
+                # Update Selenium cookies with response cookies
+                for name, value in response.cookies.items():
+                    self.driver.add_cookie({'name': name, 'value': value})
+            
+            return result
+            
+        except requests.exceptions.RequestException as e:
+            return f"Error making POST request to {url}: {str(e)}"
+        except Exception as e:
+            return f"Unexpected error: {str(e)}"
+
+    def post_from_form(self, form_selector: Optional[str] = None, 
+                      form_data: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Find a form on the current page and submit it via POST.
+        
+        Args:
+            form_selector: CSS selector or XPath to find the form (default: first form on page)
+            form_data: Data to fill in the form (overrides existing values)
+            
+        Returns:
+            Result of form submission
+        """
+        try:
+            # Find the form
+            if form_selector:
+                if form_selector.startswith('//'):
+                    # XPath selector
+                    form_element = self.driver.find_element(By.XPATH, form_selector)
+                else:
+                    # CSS selector
+                    form_element = self.driver.find_element(By.CSS_SELECTOR, form_selector)
+            else:
+                # Find first form on page
+                form_element = self.driver.find_element(By.TAG_NAME, "form")
+            
+            # Get form details
+            action = form_element.get_attribute("action")
+            method = form_element.get_attribute("method") or "GET"
+            
+            if not action:
+                # If no action, use current URL
+                action = self.driver.current_url
+            
+            # Convert relative URL to absolute
+            if not action.startswith(('http://', 'https://')):
+                if action.startswith('/'):
+                    # Relative to domain root
+                    current_url = urllib.parse.urlparse(self.driver.current_url)
+                    action = f"{current_url.scheme}://{current_url.netloc}{action}"
+                else:
+                    # Relative to current path
+                    current_url = urllib.parse.urlparse(self.driver.current_url)
+                    current_path = current_url.path.rsplit('/', 1)[0] if '/' in current_url.path else ''
+                    action = f"{current_url.scheme}://{current_url.netloc}{current_path}/{action}"
+            
+            # Get all form inputs
+            input_elements = form_element.find_elements(By.XPATH, ".//input | .//textarea | .//select")
+            
+            # Prepare form data
+            form_data_to_submit = {}
+            for element in input_elements:
+                input_name = element.get_attribute("name")
+                input_type = element.get_attribute("type")
+                input_value = element.get_attribute("value") or ""
+                
+                if input_name and input_type not in ['submit', 'button', 'reset']:
+                    # Use provided data if available, otherwise use existing value
+                    if form_data and input_name in form_data:
+                        form_data_to_submit[input_name] = form_data[input_name]
+                    else:
+                        form_data_to_submit[input_name] = input_value
+            
+            # If no specific form data provided and method is POST, submit the form
+            if method.upper() == "POST" and not form_data:
+                # Let Selenium handle the form submission
+                submit_button = form_element.find_element(By.XPATH, ".//input[@type='submit'] | .//button[@type='submit']")
+                if submit_button:
+                    before_content = self.describe_website()
+                    submit_button.click()
+                    time.sleep(3)  # Wait for submission
+                    after_content = self.describe_website()
+                    
+                    if before_content != after_content:
+                        return f"Form submitted successfully. Page changed. Now {after_content}"
+                    else:
+                        return "Form submitted but page did not change significantly."
+                else:
+                    return "No submit button found in the form."
+            else:
+                # Use our POST request method
+                if method.upper() == "POST":
+                    return self.make_post_request(action, data=form_data_to_submit)
+                else:
+                    # For GET forms, construct URL with query parameters
+                    query_string = urllib.parse.urlencode(form_data_to_submit)
+                    get_url = f"{action}?{query_string}"
+                    return self.describe_website(get_url)
+                    
+        except Exception as e:
+            return f"Error submitting form: {str(e)}"
+
+    def previous_webpage(self) -> str:
+        """Go back in browser history."""
+        self.driver.back()
+        return self.describe_website()
+
+    def google_search(self, query: str) -> str:
+        safe_string = urllib.parse.quote_plus(query)
+        url = "https://www.google.com/search?q=" + safe_string
+        # Go to website
+        try:
+            self.driver.switch_to.window(self.driver.window_handles[-1])
+            self.driver.get(url)
+        except Exception:
+            return f"Cannot load website {url}. Try again later."
+
+        # Scrape search results
+        results = self._get_google_search_results()
+        return (
+            "Which url would you like to goto? Provide the full url starting with http"
+            " or https to goto: "
+            + json.dumps(results)
+        )
+
+    def _get_google_search_results(self) -> List[Dict[str, Any]]:
+        # Scrape search results
+        results = []
+        page_source = self.driver.page_source
+        soup = BeautifulSoup(page_source, "html.parser")
+        search_results = soup.find_all("div", class_="g")
+        for _, result in enumerate(search_results, start=1):
+            if result.find("a") and result.find("h3"):
+                title_element = result.find("h3")
+                link_element = result.find("a")
+
+                title = title_element.get_text()
+                link = link_element.get("href")
+                if title and link:
+                    results.append(
+                        {
+                            "title": title,
+                            "link": link,
+                        }
+                    )
+        return results
+
+    def describe_website(self, url: Optional[str] = None) -> str:
+        """Describe the website."""
+        output = ""
+        if url:
+            try:
+                self.driver.switch_to.window(self.driver.window_handles[-1])
+                self.driver.get(url)
+            except Exception:
+                return (
+                    f"Cannot load website {url}. Make sure you input the correct and"
+                    " complete url starting with http:// or https://."
+                )
+
+        # Let driver wait for website to load
+        WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        time.sleep(5)
+
+
+        try:
+            # Extract main content
+            main_content = self._get_website_main_content()
+        except WebDriverException:
+            return "Website still loading, please wait a few seconds and try again."
+        if main_content:
+            output += f"{main_content}\n"
+
+        # Extract interactable components (buttons and links)
+        interactable_content = self._get_interactable_elements()
+        if interactable_content:
+            output += f"{interactable_content}\n"
+
+        # Extract form inputs
+        form_fields = self._find_form_fields()
+        if form_fields:
+            output += (
+                "You can input text in these fields using fill_form function: "
+                + form_fields
+            )
+        return output
+
+    def click_button_by_text(self, button_text: str) -> str:
+        # check if the button text is url
+        if validators.url(button_text):
+            return self.describe_website(button_text)
+        # If it is google search, then fetch link from google
+        if self.driver.current_url.startswith("https://www.google.com/search"):
+            google_search_results = self._get_google_search_results()
+            for result in google_search_results:
+                if button_text.lower() in result["title"].lower():
+                    return self.describe_website(result["link"])
+        self.driver.switch_to.window(self.driver.window_handles[-1])
+        # If there are string surrounded by double quotes, extract them
+        if button_text.count('"') > 1:
+            try:
+                button_text = re.findall(r'"([^"]*)"', button_text)[0]
+            except IndexError:
+                # No text surrounded by double quotes
+                pass
+        try:
+            elements = self.driver.find_elements(
+                By.XPATH,
+                "//button | //div[@role='button'] | //a | //input[@type='checkbox']",
+            )
+
+            if not elements:
+                return (
+                    "No interactable buttons found in the website. Try another website."
+                )
+
+            selected_element = None
+            all_buttons = []
+            for element in elements:
+                text = find_parent_element_text(element)
+                button_text = prettify_text(button_text)
+                if (
+                    element.is_displayed()
+                    and element.is_enabled()
+                    and (
+                        text == button_text
+                        or (
+                            button_text in text
+                            and abs(len(text) - len(button_text)) < 50
+                        )
+                    )
+                ):
+                    selected_element = element
+                    if text and text not in all_buttons:
+                        all_buttons.append(text)
+                    break
+            if not selected_element:
+                return (
+                    f"No interactable element found with text: {button_text}. Double"
+                    " check the button text and try again. Available buttons:"
+                    f" {json.dumps(all_buttons)}"
+                )
+
+            # Scroll the element into view and Click
+            before_content = self.describe_website()
+            actions = LoggingActionChains(self.driver)
+            actions.move_to_element(selected_element).click().perform()
+            after_content = self.describe_website()
+            if before_content == after_content:
+                output = (
+                    "Clicked interactable element but nothing changed on the website."
+                )
+            else:
+                output = "Clicked interactable element and the website changed. Now "
+                output += self.describe_website()
+            return output
+        except WebDriverException as e:
+            return f"Error clicking button with text '{button_text}', message: {e.msg}"
+
+    def find_form_inputs(self, url: Optional[str] = None) -> str:
+        """Find form inputs on the website."""
+        fields = self._find_form_fields(url)
+        if fields:
+            form_inputs = "Available Form Input Fields: " + fields
+        else:
+            form_inputs = "No form inputs found on current page. Try another website."
+        return form_inputs
+
+    def _find_form_fields(self, url: Optional[str] = None) -> str:
+        """Find form fields on the website."""
+        if url and url != self.driver.current_url and url.startswith("http"):
+            try:
+                self.driver.switch_to.window(self.driver.window_handles[-1])
+                self.driver.get(url)
+                # Let driver wait for website to load
+                time.sleep(5)
+                WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+            except WebDriverException as e:
+                return f"Error loading url {url}, message: {e.msg}"
+
+        fields = []
+        try:
+            for element in self.driver.find_elements(By.XPATH, "//textarea | //input"):
+                label_txt = (
+                    element.get_attribute("name")
+                    or element.get_attribute("aria-label")
+                    or find_parent_element_text(element)
+                )
+                if (
+                    label_txt
+                    and "\n" not in label_txt
+                    and len(label_txt) < 100
+                    and label_txt not in fields
+                ):
+                    label_txt = prettify_text(label_txt)
+                    fields.append(label_txt)
+        except StaleElementReferenceException:
+            # Handle the exception and maybe retry or log the error
+            pass
+
+        return str(fields)
+
+
+
+    def fill_out_form(self, form_input: Optional[str] = None, **kwargs: Any) -> str:
+        """fill out form by form field name and input name"""
+        filled_element = None
+        if form_input and type(form_input) == str:
+            # Clean up form input
+            form_input_str = truncate_string_from_last_occurrence(
+                string=form_input, character="}"  # type: ignore
+            )
+            try:
+                form_input = json.loads(form_input_str)
+            except json.decoder.JSONDecodeError:
+                return (
+                    "Invalid JSON input. Please check your input is JSON format and try"
+                    " again. Make sure to use double quotes for strings. Example input:"
+                    ' {"email": "foo@bar.com","name": "foo bar"}'
+                )
+        elif not form_input:
+            form_input = kwargs  # type: ignore
+
+        MAX_RETRIES = 3
+
+        for key, value in form_input.items():
+            retries = 0
+            while retries < MAX_RETRIES:
+                try:
+                    # Use explicit wait to find the element
+                    time.sleep(1)
+                    element = WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.XPATH, f"//textarea[@name='{key}'] | //input[@name='{key}']"))
+                    )
+                    # Scroll the element into view
+                    self.driver.execute_script("arguments[0].scrollIntoView();", element)
+
+                    # Clear the input field
+                    element.send_keys(Keys.CONTROL + "a")
+                    element.send_keys(Keys.DELETE)
+                    element.clear()
+
+                    # Send the input value
+                    element.send_keys(value)
+
+                    filled_element = element
+                    break  # Exit the while loop if successful
+                except StaleElementReferenceException:
+                    retries += 1
+                    if retries == MAX_RETRIES:
+                        return f"Failed to fill out form input {key} after {MAX_RETRIES} retries."
+                    continue
+                except WebDriverException as e:
+                    print(e)
+                return f"Error filling out form with input {form_input}, message: {e.msg}"
+
+        if not filled_element:
+            return (
+                f"Cannot find form with input: {form_input.keys()}."  # type: ignore
+                f" Available form inputs: {self._find_form_fields()}"
+            )
+        before_content = self.describe_website()
+        filled_element.send_keys(Keys.RETURN)
+        after_content = self.describe_website()
+        if before_content != after_content:
+            return (
+                f"Successfully filled out form with input: {form_input}, website"
+                f" changed after filling out form. Now {after_content}"
+            )
+        else:
+            return (
+                f"Successfully filled out form with input: {form_input}, but"
+                " website did not change after filling out form."
+            )
+
+
+    def scroll(self, direction: str) -> str:
+        # Get the height of the current window
+        window_height = self.driver.execute_script("return window.innerHeight")
+        if direction == "up":
+            window_height = -window_height
+
+        # Scroll by 1 window height
+        self.driver.execute_script(f"window.scrollBy(0, {window_height})")
+
+        return self.describe_website()
+
+    def _get_website_main_content(self) -> str:
+        texts = get_all_text_elements(self.driver)
+        pretty_texts = [prettify_text(text) for text in texts]
+        if not pretty_texts:
+            return ""
+
+        description = (
+            "Current window displays the following contents, try scrolling up or down"
+            " to view more: "
+        )
+        description += json.dumps(pretty_texts)
+
+        return description
+
+    def _get_interactable_elements(self) -> str:
+        # Extract interactable components (buttons and links)
+        interactable_elements = self.driver.find_elements(
+            By.XPATH,
+            "//button | //div[@role='button'] | //a | //input[@type='checkbox']",
+        )
+
+        interactable_texts = []
+        for element in interactable_elements:
+            button_text = find_parent_element_text(element)
+            button_text = prettify_text(button_text, 50)
+            if (
+                button_text
+                and button_text not in interactable_texts
+                and element.is_displayed()
+                and element.is_enabled()
+            ):
+                interactable_texts.append(button_text)
+
+        # Split up the links and the buttons
+        buttons_text = []
+        links_text = []
+        for text in interactable_texts:
+            if validators.url(text):
+                links_text.append(text)
+            else:
+                buttons_text.append(text)
+        interactable_output = ""
+        if links_text:
+            interactable_output += f"Goto these links: {json.dumps(links_text)}\n"
+        if buttons_text:
+            interactable_output += f"Click on these buttons: {json.dumps(buttons_text)}"
+        return interactable_output
+
+
+# New Pydantic models for POST request functionality
+class PostRequestInput(BaseModel):
+    """POST request input model."""
+    
+    url: str = Field(
+        ...,
+        description="Full URL to send the POST request to",
+        example="https://api.example.com/submit"
+    )
+    
+    data: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Form data to send (for application/x-www-form-urlencoded)",
+        example={"name": "John", "email": "john@example.com"}
+    )
+    
+    json_data: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="JSON data to send (for application/json)",
+        example={"user": {"name": "John", "age": 30}}
+    )
+    
+    headers: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Additional headers to include in the request",
+        example={"Authorization": "Bearer token123", "Content-Type": "application/json"}
+    )
+    
+    cookies: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Additional cookies to include in the request",
+        example={"session_id": "abc123"}
+    )
+    
+    include_session_cookies: bool = Field(
+        default=True,
+        description="Whether to include cookies from the current browser session"
+    )
+
+
+class PostFormInput(BaseModel):
+    """POST form submission input model."""
+    
+    form_selector: Optional[str] = Field(
+        default=None,
+        description="CSS selector or XPath to find the form (default: first form on page)",
+        example="#login-form or //form[@id='login-form']"
+    )
+    
+    form_data: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Data to fill in the form (overrides existing values)",
+        example={"username": "user123", "password": "pass123"}
+    )
+
+
+class GoogleSearchInput(BaseModel):
+    """Google search input model."""
+
+    query: str = Field(..., description="search query")
+
+
+class DescribeWebsiteInput(BaseModel):
+    """Describe website input model."""
+
+    url: str = Field(
+        ...,
+        description="full URL starting with http or https",
+        example="https://www.google.com/",
+    )
+
+
+class ClickButtonInput(BaseModel):
+    """Click button input model."""
+
+    button_text: str = Field(
+        ...,
+        description="text of the button/link you want to click",
+        example="Contact Us",
+    )
+
+
+class FindFormInput(BaseModel):
+    """Find form input input model."""
+
+    url: Optional[str] = Field(
+        default=None,
+        description="the current website url",
+        example="https://www.google.com/",
+    )
+
+
+class FillOutFormInput(BaseModel):
+    """Fill out form input model."""
+    
+    form_input: Dict[str, Any] = Field(  # Change from str to Dict
+        default=None,
+        description="dictionary with the input fields and their values",
+        example={"email": "foo@bar.com", "name": "foo bar"},
+    )
+
+
+class ScrollInput(BaseModel):
+    """Scroll window."""
+
+    direction: str = Field(
+        default="down", description="direction to scroll, either 'up' or 'down'"
+    )
