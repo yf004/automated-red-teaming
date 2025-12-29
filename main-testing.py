@@ -484,14 +484,6 @@ No Additional text.
         }
     )
 
-    print("\n" + "="*60)
-    print("WORKFLOW COMPLETE")
-    print("="*60)
-    
-    if final_state.get("final_report"):
-        print("\n=== FINAL REPORT ===")
-        print(final_state["final_report"])
-
     end_time = time.perf_counter()
 
     elapsed_time = end_time - start_time
