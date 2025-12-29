@@ -152,6 +152,7 @@ __pycache__/
 .lh/
 .vscode/
 
+
 # Distribution / packaging
 .Python
 build/
@@ -327,3 +328,5 @@ pip-selfcheck.json
 # End of https://www.toptal.com/developers/gitignore/api/python,node,v
 /vector_store
 temp.py
+
+results/
