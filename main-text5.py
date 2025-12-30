@@ -42,39 +42,32 @@ class ScanForNoSQLITool(BaseTool):
 Found Blind NoSQL Injection:
         URL: {url}
         param:
-        Injection: =true: ';return true;'}}]//, false: "';return false;'}}//"
+        Injection: =true:  || 'a'=='a' || 'a'=='a, false: ";return false;"
 ''',
             f'''
 Found Blind NoSQL Injection:
         URL: {url}
         param:
-        Injection: =true: ' || 'a'=='a' || 'a'=='a, false: "' && 'a'!='a' && 'a'!='a"
+        Injection: =true:  && 'a'=='a' && 'a'=='a, false: ";return false;"
 ''',
             f'''
 Found Blind NoSQL Injection:
         URL: {url}
         param:
-        Injection: =true: ';return true;', false: "';return false;'"
+        Injection: =true: ;return true;//, false: " && 'a'!='a' && 'a'!='a//"
 ''',
             f'''
 Found Blind NoSQL Injection:
         URL: {url}
         param:
-        Injection: =true: ' || 'a'=='a' || 'a'=='a//, false: "' && 'a'!='a' && 'a'!='a//"
+        Injection: =true: ;return true;, false: " && 'a'!='a' && 'a'!='a"
 ''',
             f'''
 Found Timing based NoSQL Injection:
         URL: {url}
         param:
-        Injection: ="';sleep(500);'"
-''',
-            f'''
-Found Timing based NoSQL Injection:
-        URL: {url}
-        param:
-        Injection: ="';sleep(500);'}}//"
-'''
-        ]
+        Injection: =true:  && 'a'=='a' && 'a'=='a//, false: ";return false;//"
+''']
 
         # get the current result and increment counter
         result = res[0:self._state % len(res)+1]

@@ -39,42 +39,41 @@ class ScanForNoSQLITool(BaseTool):
     def _run(self, url: str, fields: Union[List[str], str]) -> str:
         res = [
             f'''
-Found Blind NoSQL Injection:
+Found Error NoSQL Injection:
         URL: {url}
         param:
-        Injection: =true: ';return true;'}}]//, false: "';return false;'}}//"
+        Injection: {{"foo": 1}}=
+''',
+            f'''
+Found Error NoSQL Injection:
+        URL: {url}
+        param:
+        Injection: {{"foo": 1}}=
 ''',
             f'''
 Found Blind NoSQL Injection:
         URL: {url}
         param:
-        Injection: =true: ' || 'a'=='a' || 'a'=='a, false: "' && 'a'!='a' && 'a'!='a"
+        Injection: =true: {{"$where":  "return true"}}, false: {{"$where":  "return false"}}
 ''',
             f'''
 Found Blind NoSQL Injection:
         URL: {url}
         param:
-        Injection: =true: ';return true;', false: "';return false;'"
+        Injection: =true: {{"$where":  "return true"}}, false: {{"$or": [{{"foo":"1"}},{{"foo":"1"}}]}}
 ''',
             f'''
 Found Blind NoSQL Injection:
         URL: {url}
         param:
-        Injection: =true: ' || 'a'=='a' || 'a'=='a//, false: "' && 'a'!='a' && 'a'!='a//"
+        Injection: =true: {{"$or": [{{}},{{"foo":"1"}}]}}, false: {{"$or": [{{"foo":"1"}},{{"foo":"1"}}]}}
 ''',
             f'''
 Found Timing based NoSQL Injection:
         URL: {url}
         param:
-        Injection: ="';sleep(500);'"
-''',
-            f'''
-Found Timing based NoSQL Injection:
-        URL: {url}
-        param:
-        Injection: ="';sleep(500);'}}//"
-'''
-        ]
+        Injection: Whole Body={{"$where":  "sleep(500)"}}
+''']
 
         # get the current result and increment counter
         result = res[0:self._state % len(res)+1]
