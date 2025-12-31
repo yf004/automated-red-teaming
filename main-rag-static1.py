@@ -51,11 +51,11 @@ async def main():
 
     scanner_tool = ScanForNoSQLITool()
     
-    # initialise rag
+    # Initialize RAG tool
     print("[*] Initializing RAG tool...")
     from tools.all_tools import rag
     rag_tool = rag(
-        json_path="nosqli_docs.json", 
+        json_path="nosql_injection_knowledge.json",  # Update with your actual path
         name="nosql_injection_knowledge",
         description="Retrieves information about NoSQL injection techniques, payloads, and best practices from a curated knowledge base. Use this to get expert guidance on crafting effective NoSQL injection payloads."
     )
@@ -75,7 +75,9 @@ async def main():
         entry_point: str
         website_scrape: str
         messages: List[Any]
-        planner_research: Optional[str] 
+        scanner_tool_inputs: Optional[Any]
+        manual_scan_report: Optional[str]
+        planner_research: Optional[str]  # NEW: stores RAG research
         planner_output: Optional[Any]
         attack_results: Optional[List[Any]]
         critic_decision: Optional[str]
@@ -98,7 +100,7 @@ You are a Scanner Input Structurer analyzing a website to determine NoSQL inject
 === INITIAL WEBSITE SCRAPE (RAW) ===
 {state['website_scrape']}
 
-Your task is to analyze the website scrape and determine the the entry point and the required fields in the form.
+Your task is to analyze the website scrape and determine the INPUTS that should be passed to a NoSQL Injection scanner tool.
 
 Identify:
 1. Any forms present (action URLs, HTTP methods)
@@ -124,9 +126,23 @@ Return the scanner tool inputs with:
                 "entry_point": result["scanner_tool_inputs"]['endpoint'],
                 "fields": result["scanner_tool_inputs"]['fields']}
 
+    async def manual_scanner(state: FullPentestState):
+        """Run the manual NoSQL scanner tool."""
+        
+        res = await scanner_tool.arun({
+            "url": state["entry_point"],
+            "fields": state["fields"],
+        })
+        
+        print("\n=== MANUAL SCANNER OUTPUT ===")
+        print(res)
+        
+        return {"manual_scan_report": res}
+
     async def planner_agent(state: FullPentestState):
         """Research NoSQL injection techniques using RAG tool."""
         
+        # Use LangChain's ChatOllama with tool binding for RAG
         from langchain_ollama.chat_models import ChatOllama
         from langchain_core.messages import HumanMessage, SystemMessage
         
@@ -136,6 +152,7 @@ Return the scanner tool inputs with:
             timeout=120,
         )
         
+        # Bind the RAG tool to the LLM
         llm_with_tools = llm.bind_tools([rag_tool])
         
         research_prompt = f"""
@@ -149,6 +166,9 @@ You are a Penetration Testing Planner researching NoSQL injection techniques.
 
 === GOAL ===
 {state['goal']}
+
+=== MANUAL SCAN REPORT ===
+{state['manual_scan_report']}
 
 Your task is to research effective NoSQL injection techniques for this scenario.
 
@@ -218,6 +238,9 @@ You are a Penetration Testing Payload Generator creating NoSQL injection payload
 
 === GOAL ===
 {state['goal']}
+
+=== MANUAL SCAN REPORT ===
+{state['manual_scan_report']}
 
 === RESEARCH FROM KNOWLEDGE BASE ===
 {state['planner_research']}
@@ -317,6 +340,9 @@ You are a Penetration Test Critic Agent evaluating attack results.
 === GOAL ===
 {state['goal']}
 
+=== MANUAL SCAN REPORT ===
+{state['manual_scan_report']}
+
 === RESEARCH CONDUCTED ===
 {state['planner_research'][:500]}...
 
@@ -372,6 +398,9 @@ You are a Penetration Test Report Writer creating a comprehensive security asses
 
 === GOAL ===
 {state['goal']}
+
+=== MANUAL SCAN REPORT ===
+{state['manual_scan_report']}
 
 === RESEARCH CONDUCTED ===
 {state['planner_research']}
@@ -437,6 +466,7 @@ No Additional text.
     
     # add all nodes
     graph.add_node("scanner_input_structurer", scanner_input_structurer)
+    graph.add_node("manual_scanner", manual_scanner)
     graph.add_node("planner_agent", planner_agent) 
     graph.add_node("planner_structurer", planner_structurer)  
     graph.add_node("attacker_agent", attacker_agent)
@@ -445,7 +475,8 @@ No Additional text.
 
     # edges
     graph.add_edge(START, "scanner_input_structurer")
-    graph.add_edge("scanner_input_structurer", "planner_agent")
+    graph.add_edge("scanner_input_structurer", "manual_scanner")
+    graph.add_edge("manual_scanner", "planner_agent")
     graph.add_edge("planner_agent", "planner_structurer")  
     graph.add_edge("planner_structurer", "attacker_agent")
     graph.add_edge("attacker_agent", "critic_agent")
@@ -454,6 +485,7 @@ No Additional text.
         "critic_agent",
         route_after_critic,
         {
+            "manual_scanner": "manual_scanner",
             "planner_agent": "planner_agent",  
             "report_writer": "report_writer",
             END: END

