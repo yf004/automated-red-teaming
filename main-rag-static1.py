@@ -55,7 +55,7 @@ async def main():
     print("[*] Initializing RAG tool...")
     from tools.all_tools import rag
     rag_tool = rag(
-        json_path="nosql_injection_knowledge.json",  # Update with your actual path
+        json_path="nosqli_docs.json",  # Update with your actual path
         name="nosql_injection_knowledge",
         description="Retrieves information about NoSQL injection techniques, payloads, and best practices from a curated knowledge base. Use this to get expert guidance on crafting effective NoSQL injection payloads."
     )
