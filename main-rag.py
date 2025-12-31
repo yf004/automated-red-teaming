@@ -71,8 +71,6 @@ async def main():
         entry_point: str
         website_scrape: str
         messages: List[Any]
-        scanner_tool_inputs: Optional[Any]
-        manual_scan_report: Optional[str]
         planner_research: Optional[str]  # NEW: stores RAG research
         planner_output: Optional[Any]
         attack_results: Optional[List[Any]]
@@ -122,19 +120,6 @@ Return the scanner tool inputs with:
                 "entry_point": result["scanner_tool_inputs"]['endpoint'],
                 "fields": result["scanner_tool_inputs"]['fields']}
 
-    async def manual_scanner(state: FullPentestState):
-        """Run the manual NoSQL scanner tool."""
-        
-        res = await scanner_tool.arun({
-            "url": state["entry_point"],
-            "fields": state["fields"],
-        })
-        
-        print("\n=== MANUAL SCANNER OUTPUT ===")
-        print(res)
-        
-        return {"manual_scan_report": res}
-
     async def planner_agent(state: FullPentestState):
         """Research NoSQL injection techniques using RAG tool."""
         
@@ -162,9 +147,6 @@ You are a Penetration Testing Planner researching NoSQL injection techniques.
 
 === GOAL ===
 {state['goal']}
-
-=== MANUAL SCAN REPORT ===
-{state['manual_scan_report']}
 
 Your task is to research effective NoSQL injection techniques for this scenario.
 
@@ -234,9 +216,6 @@ You are a Penetration Testing Payload Generator creating NoSQL injection payload
 
 === GOAL ===
 {state['goal']}
-
-=== MANUAL SCAN REPORT ===
-{state['manual_scan_report']}
 
 === RESEARCH FROM KNOWLEDGE BASE ===
 {state['planner_research']}
@@ -336,9 +315,6 @@ You are a Penetration Test Critic Agent evaluating attack results.
 === GOAL ===
 {state['goal']}
 
-=== MANUAL SCAN REPORT ===
-{state['manual_scan_report']}
-
 === RESEARCH CONDUCTED ===
 {state['planner_research'][:500]}...
 
@@ -354,10 +330,9 @@ You are a Penetration Test Critic Agent evaluating attack results.
 Analyze the results and decide the next action:
 
 **Decision Options:**
-1. "rescan" - Need more information from manual scanning (iteration < 2)
-2. "replan" - Payloads failed but we can try different approaches (iteration < 5)
-3. "success" - Goal was achieved, proceed to report writing
-4. "failure" - Max iterations reached or attack not feasible (iteration >= 5)
+1. "replan" - Payloads failed but we can try different approaches (iteration < 5)
+2. "success" - Goal was achieved, proceed to report writing
+3. "failure" - Max iterations reached or attack not feasible (iteration >= 5)
 
 **Success Indicators:**
 - 200 status with authentication tokens or session cookies
@@ -394,9 +369,6 @@ You are a Penetration Test Report Writer creating a comprehensive security asses
 
 === GOAL ===
 {state['goal']}
-
-=== MANUAL SCAN REPORT ===
-{state['manual_scan_report']}
 
 === RESEARCH CONDUCTED ===
 {state['planner_research']}
@@ -449,10 +421,8 @@ No Additional text.
         """Route based on critic's decision."""
         decision = state["critic_decision"]
         
-        if decision == "rescan":
-            return "manual_scanner"
-        elif decision == "replan":
-            return "planner_agent"  # Goes back to research phase
+        if decision == "replan":
+            return "planner_agent" 
         elif decision == "success":
             return "report_writer"
         else:  
@@ -462,7 +432,6 @@ No Additional text.
     
     # add all nodes
     graph.add_node("scanner_input_structurer", scanner_input_structurer)
-    graph.add_node("manual_scanner", manual_scanner)
     graph.add_node("planner_agent", planner_agent) 
     graph.add_node("planner_structurer", planner_structurer)  
     graph.add_node("attacker_agent", attacker_agent)
@@ -471,8 +440,7 @@ No Additional text.
 
     # edges
     graph.add_edge(START, "scanner_input_structurer")
-    graph.add_edge("scanner_input_structurer", "manual_scanner")
-    graph.add_edge("manual_scanner", "planner_agent")
+    graph.add_edge("scanner_input_structurer", "planner_agent")
     graph.add_edge("planner_agent", "planner_structurer")  
     graph.add_edge("planner_structurer", "attacker_agent")
     graph.add_edge("attacker_agent", "critic_agent")
@@ -481,7 +449,6 @@ No Additional text.
         "critic_agent",
         route_after_critic,
         {
-            "manual_scanner": "manual_scanner",
             "planner_agent": "planner_agent",  
             "report_writer": "report_writer",
             END: END
@@ -500,8 +467,6 @@ No Additional text.
             "url": url,
             "goal": goal,
             "website_scrape": website_scrape,
-            "scanner_tool_inputs": None,
-            "manual_scan_report": None,
             "planner_research": None,  
             "planner_output": None,
             "attack_results": None,

@@ -48,9 +48,6 @@ def fetch_initial_scrape(url: str) -> str:
 async def main():
     start_time = time.perf_counter()
 
-
-    scanner_tool = ScanForNoSQLITool()
-
     url = sys.argv[1]
     MODEL = sys.argv[2]
     # goal = sys.argv[3]
@@ -116,9 +113,7 @@ Return the scanner tool inputs with:
                 "entry_point": result["scanner_tool_inputs"]['endpoint'],
                 "fields": result["scanner_tool_inputs"]['fields']}
 
-    async def planner_agent(state: FullPentestState):
-        """Generate 5 payload variations based on manual scan results."""
-        
+    async def planner_agent(state: FullPentestState):        
         prompt = f"""
 You are a Penetration Testing Planner Agent creating NoSQL injection payloads.
 
@@ -131,7 +126,7 @@ You are a Penetration Testing Planner Agent creating NoSQL injection payloads.
 === GOAL ===
 {state['goal']}
 
-Based on the manual scan findings, generate 5 specific NoSQL injection payloads to test.
+Based on context above, generate 5 specific NoSQL injection payloads to test.
 Each payload should be ready to send in a POST request body.
 
 Target different NoSQL injection techniques as you see fit:
@@ -353,7 +348,6 @@ No Additional text.
         "critic_agent",
         route_after_critic,
         {
-            "manual_scanner": "manual_scanner",
             "planner_agent": "planner_agent",
             "report_writer": "report_writer",
             END: END
@@ -372,8 +366,6 @@ No Additional text.
             "url": url,
             "goal": goal,
             "website_scrape": website_scrape,
-            "scanner_tool_inputs": None,
-            "manual_scan_report": None,
             "planner_output": None,
             "attack_results": None,
             "critic_decision": None,
@@ -383,7 +375,8 @@ No Additional text.
             "fields": [],
             
             
-        }
+        },
+        config={"recursion_limit": 50}
     )
 
     # calculate and output time taken for data collection

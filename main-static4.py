@@ -263,7 +263,7 @@ Analyze the results and decide the next action:
 **Decision Options:**
 1. "rescan" - Need more information from manual scanning
 2. "replan" - Payloads failed but we can try different approaches (iteration < 5)
-3. "success" - Goal has been achieved ( if ANY payload in ATTACK RESULTS achieves goal: {goal}), proceed to report writing
+3. "success" - Goal has been achieved (if ANY payload contains flag in 'secret'), proceed to report writing
 4. "failure" - Max iterations reached or attack not feasible (iteration >= 5)
 
 **Success Indicators:**

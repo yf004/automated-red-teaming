@@ -21,18 +21,18 @@ class ScanForNoSQLITool(BaseTool):
 
     def _run(self, url: str, fields: Union[List[str], str]) -> str:
         res = [
-            f'''
-Found Blind NoSQL Injection:
-        URL: {url}
-        param:
-        Injection: =true:  || 'a'=='a' || 'a'=='a, false: ";return false;"
-''',
-            f'''
-Found Blind NoSQL Injection:
-        URL: {url}
-        param:
-        Injection: =true:  && 'a'=='a' && 'a'=='a, false: ";return false;"
-''',
+#             f'''
+# Found Blind NoSQL Injection:
+#         URL: {url}
+#         param:
+#         Injection: =true:  || 'a'=='a' || 'a'=='a, false: ";return false;"
+# ''',
+#             f'''
+# Found Blind NoSQL Injection:
+#         URL: {url}
+#         param:
+#         Injection: =true:  && 'a'=='a' && 'a'=='a, false: ";return false;"
+# ''',
             f'''
 Found Blind NoSQL Injection:
         URL: {url}
